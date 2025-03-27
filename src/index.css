@@ -1,13 +1,15 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+/* src/index.css */
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
+/* Tailwind's default base styles */
+@tailwind base;
+
+/* Tailwind's component classes (like buttons, forms, etc.) */
+@tailwind components;
+
+/* Tailwind's utility classes (padding, margin, etc.) */
+@tailwind utilities;
+
+/* Your custom styles can go here */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@500;600;700&display=swap');
+
+
