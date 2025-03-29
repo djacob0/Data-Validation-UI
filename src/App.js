@@ -7,6 +7,7 @@ import Dashboard from "./components/Dashboard";
 import Import from "./components/Import";
 import CountTab from "./components/CountTab";
 import { DataProvider } from "./contexts/DataContext";
+import Users from "./components/Users";
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -33,6 +34,7 @@ const App = () => {
                 <Route index element={<Dashboard />} />
                 <Route path="import" element={<Import />} />
                 <Route path="count" element={<CountTab />} />
+                <Route path="users" element={<Users />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </>
