@@ -17,6 +17,7 @@ const Login = ({ onLogin }) => {
       navigate("/");
     }
   }, [navigate, onLogin]);
+  
 
   const handleLogin = async () => {
     if (!username || !password) {
@@ -28,18 +29,33 @@ const Login = ({ onLogin }) => {
     try {
       const response = await api.post("/api/login", { username, password });
   
+      console.log("Login API Response:", response.data); // Debugging: Check response
+  
       const { token, user } = response.data;
+  
+      if (!token) throw new Error("Invalid token received"); // Prevent login if no token
   
       localStorage.setItem("authToken", token);
       localStorage.setItem("user", JSON.stringify(user));
   
-      Swal.fire({ title: "Login Successful!", icon: "success", timer: 1000, showConfirmButton: false });
+      Swal.fire({
+        title: "Login Successful!",
+        icon: "success",
+        timer: 1000,
+        showConfirmButton: false,
+      });
   
-      onLogin();
+      onLogin(token);
       navigate("/");
     } catch (err) {
+      console.error("Login error:", err.response?.data || err.message);
       setError(err.response?.data?.message || "Invalid login credentials");
-      Swal.fire({ title: "Error!", text: err.response?.data?.message || "Login failed", icon: "error" });
+  
+      Swal.fire({
+        title: "Error!",
+        text: err.response?.data?.message || "Login failed",
+        icon: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -87,7 +103,7 @@ const Login = ({ onLogin }) => {
             onClick={handleLogin}
             fullWidth
             variant="contained"
-            sx={{ mt: 2, backgroundColor: "#4caf50", "&:hover": { backgroundColor: "#388e3c" } }}
+            sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#4caf50" } }}
             disabled={loading}
           >
             {loading ? <CircularProgress size={24} sx={{ color: "white" }} /> : "Sign In"}

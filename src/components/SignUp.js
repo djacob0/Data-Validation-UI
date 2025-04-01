@@ -51,7 +51,7 @@ const SignUp = () => {
 
     setLoading(true);
     try {
-      const response = await api.post("/api/register", formData);
+      const response = await api.post("/api/signup", formData);
       const data = response.data;
 
       Swal.fire({ title: "Registration Successful!", icon: "success", timer: 2000, showConfirmButton: false });
@@ -79,37 +79,38 @@ const SignUp = () => {
         backgroundPosition: "center",
       }}
     >
-      <Card sx={{ width: 600, padding: 3, boxShadow: 3 }}>
+      <Card sx={{ width: 600, padding: 4, boxShadow: 3 }}>
         <CardContent>
-          <Box display="flex" alignItems="center" justifyContent="center" mb={2}>
-            <img src="/DAlogo.png" alt="Logo" className="h-12 w-12 mr-2" />
-            <Typography variant="h6" fontWeight="bold" textAlign="center">
+          <Box display="flex" flexDirection="column" alignItems="center" textAlign="center" mb={2}>
+            <img src="/DAlogo.png" alt="Logo" style={{ height: 48, marginBottom: 8 }} />
+            <Typography variant="h6" fontWeight="bold">
               Data Validation and Profiling Sign Up
             </Typography>
           </Box>
 
           <Grid container spacing={2}>
             <Grid item xs={6}>
-              <TextField fullWidth label="First Name" name="firstName" value={formData.firstName} onChange={handleChange} required />
+              <TextField fullWidth size="small" label="First Name" name="firstName" value={formData.firstName} onChange={handleChange} required />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Middle Name" name="middleName" value={formData.middleName} onChange={handleChange} required />
+              <TextField fullWidth size="small" label="Middle Name" name="middleName" value={formData.middleName} onChange={handleChange} required />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Last Name" name="lastName" value={formData.lastName} onChange={handleChange} required />
+              <TextField fullWidth size="small" label="Last Name" name="lastName" value={formData.lastName} onChange={handleChange} required />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Phone Number" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required />
+              <TextField fullWidth size="small" label="Phone Number" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth label="Username" name="username" value={formData.username} onChange={handleChange} required />
+              <TextField fullWidth size="small" label="Username" name="username" value={formData.username} onChange={handleChange} required />
             </Grid>
             <Grid item xs={6}>
-              <TextField fullWidth type="password" label="Password" name="password" value={formData.password} onChange={handleChange} required />
+              <TextField fullWidth size="small" type="password" label="Password" name="password" value={formData.password} onChange={handleChange} required />
             </Grid>
             <Grid item xs={6}>
               <TextField
                 fullWidth
+                size="small"
                 select
                 label="Account Level"
                 name="accountLevel"
@@ -125,6 +126,7 @@ const SignUp = () => {
             <Grid item xs={6}>
               <TextField
                 fullWidth
+                size="small"
                 select
                 label="Status"
                 name="status"
@@ -137,7 +139,7 @@ const SignUp = () => {
               </TextField>
             </Grid>
             <Grid item xs={12}>
-              <TextField fullWidth type="email" label="Email" name="email" value={formData.email} onChange={handleChange} required />
+              <TextField fullWidth size="small" type="email" label="Email" name="email" value={formData.email} onChange={handleChange} required />
             </Grid>
           </Grid>
 
@@ -145,7 +147,7 @@ const SignUp = () => {
             onClick={handleRegister}
             fullWidth
             variant="contained"
-            sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#86b02d" } }}
+            sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#4caf50" } }}
             disabled={loading}
           >
             {loading ? <CircularProgress size={24} sx={{ color: "white" }} /> : "Sign Up"}
@@ -157,6 +159,7 @@ const SignUp = () => {
               Sign In
             </Button>
           </Typography>
+
           <Typography variant="caption" color="gray" sx={{ mt: 2, textAlign: "center", display: "block" }}>
             © Department of Agriculture 2025
           </Typography>
