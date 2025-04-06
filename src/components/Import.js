@@ -5,16 +5,19 @@ import {
   TableCell, TableHead, TableRow, Chip, LinearProgress, Dialog, 
   DialogTitle, DialogContent, DialogActions, TextField, Checkbox, 
   FormControlLabel, Tooltip, Tab, Tabs, IconButton, Grid,
-  TablePagination, CircularProgress, Fade, Slide
+  TablePagination, CircularProgress, Fade, Slide, Snackbar, Alert
 } from "@mui/material";
 import { 
   CloudUpload, Delete, CheckCircle, Error, Close, Refresh, 
   SaveAlt, Warning, Check, AutoFixHigh, Filter1, Spellcheck,
-  Transgender, DateRange, Numbers, LocationOn, Badge
+  Transgender, DateRange, Numbers, LocationOn, Badge, Edit, Save
 } from '@mui/icons-material';
 import Swal from "sweetalert2";
+import api from "../connection/api";
+import { standardizeHeader, cleanText, cleanNameText, formatMobile, formatGender, cleanMiddleName, cleanExtensionName, cleanMotherMaidenName,
+  formatRegion, validateSystemNumber, validateIdNumber, validateProvince, validateCityMunicipality, validateData,applyAutoFix, applyAllFixes
+} from '../utils/AutoFixValidations';
 
-// Add this new component for the progress bar
 const ValidationProgressBar = ({ progress, isValidating }) => (
   <Slide direction="down" in={isValidating} mountOnEnter unmountOnExit>
     <Box sx={{ width: '100%', mt: 2, mb: 2 }}>
@@ -34,16 +37,29 @@ const ValidationProgressBar = ({ progress, isValidating }) => (
   </Slide>
 );
 
-const LazyLoadedDataTable = ({ data, headers, validation, pagination, onChangePage, onChangeRowsPerPage }) => {
+const LazyLoadedDataTable = ({ 
+  data, 
+  headers, 
+  validation, 
+  pagination, 
+  onChangePage, 
+  onChangeRowsPerPage,
+  onCellEdit,
+  editMode
+}) => {
   const [visibleRows, setVisibleRows] = useState([]);
 
   useEffect(() => {
     const start = pagination.page * pagination.rowsPerPage;
     const end = start + pagination.rowsPerPage;
-    // data[0] = headers, data[1] = ADRIAN (row 1), data[2] = ALEXITO (row 2)
     const rowsToShow = data.slice(1).slice(start, end);
     setVisibleRows(rowsToShow);
   }, [data, pagination]);
+
+  const handleCellEdit = (rowIndex, colIndex, value) => {
+    const actualRowIndex = (pagination.page * pagination.rowsPerPage) + rowIndex + 1;
+    onCellEdit(actualRowIndex, colIndex, value);
+  };
 
   return (
     <>
@@ -51,7 +67,7 @@ const LazyLoadedDataTable = ({ data, headers, validation, pagination, onChangePa
         <Table stickyHeader>
           <TableHead>
             <TableRow>
-              <TableCell>File Row #</TableCell>
+              <TableCell>Row #</TableCell>
               {headers.map((header, i) => (
                 <TableCell key={i}>{header}</TableCell>
               ))}
@@ -66,7 +82,16 @@ const LazyLoadedDataTable = ({ data, headers, validation, pagination, onChangePa
                   <TableCell>{fileRowNumber}</TableCell>
                   {row.map((cell, colIndex) => (
                     <TableCell key={colIndex}>
-                      {cell || <span style={{ color: '#999' }}>-</span>}
+                      {editMode ? (
+                        <EditableTableCell
+                          value={cell}
+                          rowIndex={rowIndex}
+                          colIndex={colIndex}
+                          onEdit={handleCellEdit}
+                        />
+                      ) : (
+                        cell || <span style={{ color: '#999' }}>-</span>
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -77,7 +102,7 @@ const LazyLoadedDataTable = ({ data, headers, validation, pagination, onChangePa
       </Paper>
       <TablePagination
         rowsPerPageOptions={[10, 25, 50, 100]}
-        count={data.length - 1} // Exclude header
+        count={data.length - 1}
         rowsPerPage={pagination.rowsPerPage}
         page={pagination.page}
         onPageChange={onChangePage}
@@ -87,8 +112,46 @@ const LazyLoadedDataTable = ({ data, headers, validation, pagination, onChangePa
   );
 };
 
+const EditableTableCell = ({ value, rowIndex, colIndex, onEdit }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+
+  const handleSave = () => {
+    onEdit(rowIndex, colIndex, editValue);
+    setIsEditing(false);
+  };
+
+  return isEditing ? (
+    <Box display="flex" alignItems="center">
+      <TextField
+        value={editValue}
+        onChange={(e) => setEditValue(e.target.value)}
+        size="small"
+        autoFocus
+        fullWidth
+      />
+      <IconButton onClick={handleSave} size="small" color="primary">
+        <Save fontSize="small" />
+      </IconButton>
+    </Box>
+  ) : (
+    <Box display="flex" alignItems="center">
+      {value || <span style={{ color: '#999' }}>-</span>}
+      <IconButton 
+        onClick={() => setIsEditing(true)} 
+        size="small" 
+        sx={{ ml: 1 }}
+      >
+        <Edit fontSize="small" />
+      </IconButton>
+    </Box>
+  );
+};
+
 const Import = () => {
   const fileInputRef = useRef(null);
+  const [authError, setAuthError] = useState(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [validationProgress, setValidationProgress] = useState(0);
@@ -96,6 +159,8 @@ const Import = () => {
   const [fileSize, setFileSize] = useState(0);
   const [data, setData] = useState([]);
   const [headers, setHeaders] = useState([]);
+  const [editMode, setEditMode] = useState(false);
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   const [validation, setValidation] = useState({
     errors: [],
     warnings: [],
@@ -122,16 +187,67 @@ const Import = () => {
     rowsPerPage: 100
   });
 
-  const requiredFields = ['FIRSTNAME', 'LASTNAME', 'RSBSASYSTEMGENERATEDNUMBER', 'SEX', 'BIRTHDATE'];
-
-  const standardizeHeader = (name) => (name || '').toString().trim().toUpperCase();
-
+  const checkAuth = async () => {
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      console.error("Auth check failed: No token found in localStorage");
+      setAuthError("No authentication token found");
+      setSessionExpired(true);
+      return false;
+    }
+  
+    try {
+      const response = await api.get("/api/profile", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return true;
+    } catch (err) {
+      const errorMessage = err.response?.data?.message || err.message;
+      const errorStatus = err.response?.status;
+      
+      console.error("Session validation failed:", {
+        error: errorMessage,
+        status: errorStatus,
+        timestamp: new Date().toISOString(),
+        token: token.substring(0, 10) + "..." 
+      });
+  
+      setAuthError("Session expired. Please log in again.");
+      setSessionExpired(true);
+      localStorage.removeItem("authToken");
+      return false;
+    }
+  };
+  
   const [validationPagination, setValidationPagination] = useState({
     page: 0,
     rowsPerPage: 100
   });
-  
-  // Stable version of page change handler
+
+  const handleCellEdit = (rowIndex, colIndex, value) => {
+    const newData = [...data];
+    newData[rowIndex][colIndex] = value;
+    setData(newData);
+    setNeedsRefresh(true);
+  };
+
+  const handleRefreshValidation = () => {
+    runValidation();
+    setNeedsRefresh(false);
+  };
+
+  const handleExportClick = () => {
+    if (needsRefresh) {
+      Swal.fire({
+        title: 'Validation Required',
+        text: 'You must refresh validation after editing before exporting',
+        icon: 'warning'
+      });
+    } else {
+      setShowExportDialog(true);
+    }
+  };
+
   const handleValidationPageChange = (event, newPage) => {
     setValidationPagination(prev => ({
       ...prev,
@@ -139,17 +255,14 @@ const Import = () => {
     }));
   };
   
-  // Stable version of rows per page change
   const handleValidationRowsPerPageChange = (event) => {
     setValidationPagination({
-      page: 0,  // Reset to first page when changing page size
+      page: 0,
       rowsPerPage: parseInt(event.target.value, 10)
     });
   };
 
-  // Get this before your return statement
   const processedErrors = useMemo(() => {
-    // Create a map to store unique errors by row+column
     const errorMap = new Map();
     
     validation.errors.forEach(error => {
@@ -159,11 +272,8 @@ const Import = () => {
       }
     });
     
-    // Convert back to array and sort by row number
     return Array.from(errorMap.values()).sort((a, b) => a.row - b.row);
   }, [validation.errors]);
-
-  console.log("Rows", data[0]);
 
   const validationResults = useMemo(() => {
     const cellErrors = {};
@@ -178,473 +288,10 @@ const Import = () => {
     return { cellErrors, rowValidity };
   }, [validation.errors]);
 
-  const cleanText = (text, preserveSpaces = true) => {
-    if (!text) return text;
-    
-    // First pass - basic cleaning
-    let cleaned = text.toString()
-      .replace(/Ñ/g, 'N')
-      .replace(/ñ/g, 'n')
-      .replace(/[^a-zA-Z0-9\s\-.,]/g, '');  // Allow basic punctuation
-  
-    // Second pass - clean spaces
-    if (preserveSpaces) {
-      cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
-    } else {
-      cleaned = cleaned.replace(/\s+/g, ' ').trim();
-    }
-  
-    return cleaned;
-  };
+  const processFile = async (file) => {
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) return;
 
-  const formatMobile = (num) => {
-    if (!num) return num;
-    const digits = num.toString().replace(/\D/g, '');
-    return digits.length === 11 && digits.startsWith('0') ? digits.substring(1) : digits;
-  };
-
-  const fixBarangayCertificate = (value) => {
-    return 'Barangay Certificate';
-  };
-
-  const formatGender = (gender) => {
-    if (!gender) return gender;
-    const g = gender.toString().toUpperCase();
-    if (g === 'M' || g === 'MALE') return 'MALE';
-    if (g === 'F' || g === 'FEMALE') return 'FEMALE';
-    return g;
-  };
-
-  const cleanNameText = (text) => {
-    if (!text) return text;
-    return text.toString()
-      .replace(/[^a-zA-Z\s-]/g, '')
-      .replace(/\s{2,}/g, ' ') 
-  };
-
-  const cleanMiddleName = (name) => {
-    if (!name) return '';
-    let cleaned = cleanNameText(name);
-    const lower = cleaned.toLowerCase();
-    return ['n/a', 'na', 'not applicable', ''].includes(lower) ? '' : cleaned;
-  };
-
-  const cleanExtensionName = (name) => {
-    if (!name) return '';
-    return name.toString()
-      .replace(/\./g, '')
-      .replace(/\s+/g, '')
-      .trim()
-      .toUpperCase();
-  };
-
-  const cleanMotherMaidenName = (name) => {
-    if (!name) return '';
-    // Remove special characters but allow hyphens and apostrophes
-    let cleaned = name.toString()
-      .replace(/[^a-zA-Z\s\-']/g, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    // Remove if it's just "n/a" or similar
-    const lower = cleaned.toLowerCase();
-    return ['n/a', 'na', 'not applicable', ''].includes(lower) ? '' : cleaned;
-  };
-
-  const formatRegion = (region) => {
-    if (!region) return region;
-    const cleaned = region.replace(/\(.*?\)/g, '').trim();
-    const regionMap = {
-      'REGION I': 'REGION I ILOCOS REGION',
-      'REGION II': 'REGION II CAGAYAN VALLEY',
-      'REGION III': 'REGION III CENTRAL LUZON',
-      'REGION IV-A': 'REGION IV-A CALABARZON',
-      'REGION IV-B': 'REGION IV-B MIMAROPA',
-      'REGION V': 'REGION V BICOL REGION',
-      'REGION VI': 'REGION VI WESTERN VISAYAS',
-      'REGION VII': 'REGION VII CENTRAL VISAYAS',
-      'REGION VIII': 'REGION VIII EASTERN VISAYAS',
-      'REGION IX': 'REGION IX ZAMBOANGA PENINSULA',
-      'REGION X': 'REGION X NORTHERN MINDANAO',
-      'REGION XI': 'REGION XI DAVAO REGION',
-      'REGION XII': 'REGION XII SOCCSKSARGEN',
-      'REGION XIII': 'REGION XIII CARAGA',
-      'BARMM': 'BARMM BANGSAMORO AUTONOMOUS REGION IN MUSLIM MINDANAO',
-      'CAR': 'CAR CORDILLERA ADMINISTRATIVE REGION',
-      'NCR': 'NCR NATIONAL CAPITAL REGION',
-    };    
-    return regionMap[cleaned] || cleaned;
-  };
-
-  const validateSystemNumber = (num) => {
-    if (!num) return false;
-    return /^\d{2}-\d{2}-\d{2}-\d{3}-\d{6}$/.test(num.toString());
-  };  
-
-  const validateIdNumber = (id, type) => {
-    if (!id) return false;
-    if (type && type.toString().toUpperCase().includes('BARANGAY')) {
-      return id.toString().toUpperCase() === 'BARANGAY CERTIFICATE';
-    }
-    return true;
-  };
-
-  const validateProvince = (province) => {
-    if (!province) return false;
-    return !/[#@$%^&*]/.test(province.toString());
-  };
-
-  const validateCityMunicipality = (CityMunicipality) => {
-    if (!CityMunicipality) return false;
-    return !/[#@$%^&*]/.test(CityMunicipality.toString());
-  };
-
-  const validateData = (data) => {
-    const errors = [];
-    const warnings = [];
-    const validRows = [];
-    const invalidRows = [];
-    const cellErrors = {};
-
-    const noSpecialCharsFields = [
-      'STREETNO_PUROKNO', 
-      'BARANGAY', 
-      'CITYMUNICIPALITY', 
-      'DISTRICT',
-      'PROVINCE',
-      'REGION',
-      'PLACEOFBIRTH',
-      'NATIONALITY',
-      'PROFESSION',
-      'SOURCEOFFUNDS',
-      'MOTHERMAIDENNAME',
-      'NOOFFARMPARCEL'
-    ];
-    
-    for (let arrayIndex = 1; arrayIndex < data.length; arrayIndex++) {
-      const fileRowNumber = arrayIndex;
-      const row = data[arrayIndex];
-      const rowErrors = [];
-      const rowWarnings = [];
-      const rowData = {};
-      let hasErrors = false;
-  
-      headers.forEach((header, colIndex) => {
-        const originalColNumber = colIndex + 1;
-        let value = row[colIndex];
-        const stdHeader = standardizeHeader(header);
-        rowData[stdHeader] = value;
-  
-        // All validation checks use fileRowNumber
-        if (requiredFields.includes(stdHeader) && !value) {
-          const error = {
-            field: header,
-            message: 'Required field is empty',
-            value,
-            row: fileRowNumber, // Actual row number from file
-            column: originalColNumber
-          };
-          rowErrors.push(error);
-          cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-          hasErrors = true;
-        }
-
-        // Apply auto-fixes if enabled
-        if (autoFixOptions.cleanSpecialChars) {
-          value = cleanText(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.formatMobileNumbers && stdHeader === 'MOBILENO') {
-          value = formatMobile(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.standardizeGender && stdHeader === 'SEX') {
-          value = formatGender(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.cleanMiddleNames && stdHeader === 'MIDDLENAME') {
-          value = cleanMiddleName(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.cleanSpaces && ['FIRSTNAME', 'LASTNAME'].includes(stdHeader)) {
-          value = (value || '').toString().replace(/\s{2,}/g, ' ').trim();
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.standardizeRegion && stdHeader === 'REGION') {
-          value = formatRegion(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.cleanMotherMaidenName && stdHeader === 'MOTHERMAIDENNAME') {
-          value = cleanMotherMaidenName(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-        if (autoFixOptions.cleanExtensionName && stdHeader === 'EXTENSIONNAME') {
-          value = cleanExtensionName(value);
-          row[colIndex] = value;
-          rowData[stdHeader] = value;
-        }
-
-      // Validation checks
-      if (requiredFields.includes(stdHeader)) {
-        if (!value) {
-          const error = {
-            field: header,
-            message: 'Required field is empty',
-            value,
-            row: fileRowNumber, // Using original row number
-            column: originalColNumber // Using original column number
-          };
-          rowErrors.push(error);
-          cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-          hasErrors = true;
-        }
-      }
-
-      if (value && noSpecialCharsFields.includes(stdHeader)) {
-        const hasSpecialChars = /[^a-zA-Z0-9\s\-.,]/.test(value.toString());
-        if (hasSpecialChars) {
-          const error = {
-            field: header,
-            message: 'Contains invalid special characters',
-            value,
-            row: fileRowNumber, // Using original row number
-            column: originalColNumber // Using original column number
-          };
-          rowErrors.push(error);
-          cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-          hasErrors = true;
-        }
-      }
-
-      if (value) {
-        if (['FIRSTNAME', 'LASTNAME', 'MIDDLENAME'].includes(stdHeader)) {
-          // Check for special characters
-          const hasInvalidChars = /[^a-zA-Z\s-]/.test(value.toString());
-          if (hasInvalidChars) {
-            const error = {
-              field: header,
-              message: 'Contains invalid characters (only letters, spaces and hyphens allowed)',
-              value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            };
-            rowErrors.push(error);
-            cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-            hasErrors = true;
-          }
-          
-          // Check minimum length
-          if (value.replace(/\s/g, '').length < 2) {
-            const error = {
-              field: header,
-              message: 'Must be at least 2 characters',
-              value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            };
-            rowErrors.push(error);
-            cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-            hasErrors = true;
-          }
-          
-          // Check for numbers
-          if (/\d/.test(value)) {
-            const error = {
-              field: header,
-              message: 'Contains numbers (only letters allowed)',
-              value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            };
-            rowErrors.push(error);
-            cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-            hasErrors = true;
-          }
-          
-          // Check for extra spaces
-          if (/\s{2,}/.test(value)) {
-            rowWarnings.push({
-              field: header,
-              message: 'Extra spaces detected',
-              value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            });
-          }
-        }
-
-        if (stdHeader === 'RSBSASYSTEMGENERATEDNUMBER' && !validateSystemNumber(value)) {
-          const error = {
-            field: header,
-            message: 'Invalid system number (numbers only)',
-            value,
-            row: fileRowNumber, // Using original row number
-            column: originalColNumber // Using original column number
-          };
-          rowErrors.push(error);
-          cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-          hasErrors = true;
-        }
-
-        if (stdHeader === 'IDNUMBER') {
-          const idType = rowData['GOVTIDTYPE']?.toString().toUpperCase().trim();
-          
-          if (idType === 'BARANGAY CERTIFICATE') {
-            if (value.toString().toUpperCase().trim() !== 'BARANGAY CERTIFICATE') {
-              const error = {
-                field: header,
-                message: 'Must be exactly "Barangay Certificate" when ID type is Barangay Certificate',
-                value,
-                row: fileRowNumber, // Using original row number
-                column: originalColNumber // Using original column number
-              };
-              rowErrors.push(error);
-              cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-              hasErrors = true;
-            }
-          }
-        }
-
-        if (stdHeader === 'MOBILENO') {
-          const digits = value.toString().replace(/\D/g, '');
-          if (digits.length !== 10) {
-            const error = {
-              field: header,
-              message: 'Mobile number must be 10 digits',
-              value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            };
-            rowErrors.push(error);
-            cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-            hasErrors = true;
-          }
-        }
-
-        if (stdHeader === 'SEX' && !['MALE', 'FEMALE'].includes(value.toString().toUpperCase())) {
-          const error = {
-            field: header,
-            message: 'Invalid gender (must be MALE or FEMALE)',
-            value,
-            row: fileRowNumber, // Using original row number
-            column: originalColNumber // Using original column number
-          };
-          rowErrors.push(error);
-          cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-          hasErrors = true;
-        }
-
-        if (stdHeader === 'BIRTHDATE') {
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-            const error = {
-              field: header,
-              message: 'Invalid date format (YYYY-MM-DD required)',
-              value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            };
-            rowErrors.push(error);
-            cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-            hasErrors = true;
-          } else {
-            const birthDate = new Date(value);
-            const today = new Date();
-            let age = today.getFullYear() - birthDate.getFullYear();
-            const monthDiff = today.getMonth() - birthDate.getMonth();
-            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-              age--;
-            }
-            
-            if (age < 18 || age > 100) {
-              const error = {
-                field: header,
-                message: `Age must be 18-100 (current: ${age})`,
-                value,
-                row: fileRowNumber, // Using original row number
-                column: originalColNumber // Using original column number
-              };
-              rowErrors.push(error);
-              cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-              hasErrors = true;
-            }
-          }
-        }
-
-        if (stdHeader === 'MOTHERMAIDENNAME') {
-          const cleanedValue = cleanMotherMaidenName(value);
-          if (cleanedValue !== value.toString().trim()) {
-            rowWarnings.push({
-              field: header,
-              message: 'Special characters detected and cleaned',
-              value: value,
-              row: fileRowNumber, // Using original row number
-              column: originalColNumber // Using original column number
-            });
-            row[colIndex] = cleanedValue;
-            rowData[stdHeader] = cleanedValue;
-          }
-        }
-        
-        if (stdHeader === 'EXTENSIONNAME' && value && /[.]/.test(value)) {
-          rowWarnings.push({
-            field: header,
-            message: 'Remove periods from extension name',
-            value,
-            row: fileRowNumber, // Using original row number
-            column: originalColNumber // Using original column number
-          });
-        }
-        
-        if (stdHeader === 'PROVINCE' && !validateProvince(value)) {
-          const error = {
-            field: header,
-            message: 'Invalid province format (special characters not allowed)',
-            value,
-            row: fileRowNumber, // Using original row number
-            column: originalColNumber // Using original column number
-          };
-          rowErrors.push(error);
-          cellErrors[`${fileRowNumber}-${originalColNumber}`] = true;
-          hasErrors = true;
-        }
-      }
-    });
-
-    if (hasErrors) {
-      invalidRows.push({
-        row: fileRowNumber,
-        data: rowData,
-        errors: rowErrors,
-        warnings: rowWarnings
-      });
-      errors.push(...rowErrors);
-    } else {
-      validRows.push({
-        row: fileRowNumber,
-        data: rowData
-      });
-    }
-    
-    warnings.push(...rowWarnings);
-  }
-
-  return { errors, warnings, validRows, invalidRows, cellErrors };
-};
-
-  const processFile = (file) => {
     setProcessing(true);
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -686,6 +333,9 @@ const Import = () => {
   };
 
   const runValidation = async () => {
+    const isAuthenticated = await checkAuth();
+    if (!isAuthenticated) return;
+
     if (data.length === 0) {
       Swal.fire("Error", "No data to validate", "error");
       return;
@@ -698,15 +348,13 @@ const Import = () => {
     const totalRows = data.length - 1;
     let progress = 0;
   
-    // Simulate progress updates
     const progressInterval = setInterval(() => {
       progress += 1;
       setValidationProgress(progress);
       if (progress >= 100) clearInterval(progressInterval);
     }, 30);
   
-    // Perform validation on all data
-    const validationResults = validateData(data);
+    const validationResults = validateData(data, headers, autoFixOptions);
   
     clearInterval(progressInterval);
     setValidation(validationResults);
@@ -715,82 +363,9 @@ const Import = () => {
   };
 
   const applyFix = (type) => {
-    const newData = [...data];
-    
-    newData.forEach((row, rowIndex) => {
-      if (rowIndex === 0) return;
-      
-      // Create an object with all current row values for easy access
-      const currentRowData = {};
-      headers.forEach((header, colIndex) => {
-        currentRowData[standardizeHeader(header)] = row[colIndex];
-      });
-  
-      headers.forEach((header, colIndex) => {
-        const stdHeader = standardizeHeader(header);
-        let value = row[colIndex];
-        
-        switch(type) {
-          case 'specialChars':
-            if (['FIRSTNAME', 'LASTNAME', 'MIDDLENAME'].includes(stdHeader)) {
-              value = cleanNameText(value);
-            } else {
-              value = cleanText(value);
-            }
-            break;
-          case 'mobile':
-            if (stdHeader === 'MOBILENO') {
-              value = formatMobile(value);
-            }
-            break;
-          case 'gender':
-            if (stdHeader === 'SEX') {
-              value = formatGender(value);
-            }
-            break;
-          case 'spaces':
-            if (['FIRSTNAME', 'LASTNAME'].includes(stdHeader)) {
-              value = value.replace(/\s{2,}/g, ' ').trim();
-            }
-            break;
-          case 'middlename':
-            if (stdHeader === 'MIDDLENAME') {
-              value = cleanMiddleName(value);
-            }
-            break;
-          case 'motherMaiden':
-            if (stdHeader === 'MOTHERMAIDENNAME') {
-              value = cleanMotherMaidenName(value);
-            }
-            break;
-          case 'extension':
-            if (stdHeader === 'EXTENSIONNAME') {
-              value = cleanExtensionName(value);
-            }
-            break;
-          case 'region':
-            if (stdHeader === 'REGION') {
-              value = formatRegion(value);
-            }
-            break;
-            case 'barangayId':
-              if (stdHeader === 'IDNUMBER') {
-                const govtIdType = currentRowData['GOVTIDTYPE']?.toString().toUpperCase().trim();
-                if (govtIdType === 'BARANGAY CERTIFICATE') {
-                  value = 'Barangay Certificate'; // Set exact required value
-                }
-              }
-            break;
-          default:
-            break;
-        }
-        
-        row[colIndex] = value;
-      });
-    });
-    
+    const newData = applyAutoFix(data, headers, type);
     setData(newData);
-    setValidation(validateData(newData));
+    setValidation(validateData(newData, headers));
   };
   
   const handleApplyAllFixes = () => {
@@ -805,107 +380,55 @@ const Import = () => {
       cleanExtensionName: true
     });
     
-    const newData = [...data];
-    
-    newData.forEach((row, rowIndex) => {
-      if (rowIndex === 0) return;
-      
+    const newData = applyAllFixes(data, headers);
+    setData(newData);
+    setValidation(validateData(newData, headers));
+  };
+
+  const exportToExcel = async () => {
+    const ExcelJS = (await import('exceljs')).default;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Data');
+
+    worksheet.columns = headers.map(header => ({
+      header: header.toUpperCase(),
+      key: header,
+      width: 20,
+      style: {
+        font: { name: 'Calibri', size: 11, bold: true }
+      }
+    }));
+
+    data.slice(1).forEach((row, rowIndex) => {
+      const rowObj = {};
       headers.forEach((header, colIndex) => {
-        const stdHeader = standardizeHeader(header);
-        let value = row[colIndex];
+        rowObj[header] = row[colIndex];
+      });
+
+      const excelRow = worksheet.addRow(rowObj);
+      
+      excelRow.eachCell((cell) => {
+        cell.style = {
+          font: { name: 'Calibri', size: 11 },
+          alignment: { vertical: 'middle', horizontal: 'left' }
+        };
+
+        const cellKey = `${rowIndex + 2}-${cell.col}`;
+        const hasError = validation.cellErrors[cellKey];
+        const hasWarning = validation.warnings.some(
+          w => w.row === rowIndex + 2 && w.column === cell.col
+        );
+
+        const isIdNumberCell = headers[cell.col - 1] === 'IDNUMBER';
+        const govtIdType = row[headers.indexOf('GOVTIDTYPE')];
+        const isBarangayCert = govtIdType?.toString().toUpperCase().includes('BARANGAY CERTIFICATE', 'Barangay Certificate');
         
-        // Apply all fixes
-        value = cleanText(value);
-        
-        if (stdHeader === 'MOBILENO') {
-          value = formatMobile(value);
+        if (isIdNumberCell && isBarangayCert) {
+          const idValue = row[headers.indexOf('IDNUMBER')]?.toString().toUpperCase();
         }
-        
-        if (stdHeader === 'SEX') {
-          value = formatGender(value);
-        }
-        
-        if (['FIRSTNAME', 'LASTNAME'].includes(stdHeader)) {
-          value = value.replace(/\s{2,}/g, ' ').trim();
-        }
-        
-        if (stdHeader === 'MIDDLENAME') {
-          value = cleanMiddleName(value);
-        }
-        
-        if (stdHeader === 'MOTHERMAIDENNAME') {
-          value = cleanMotherMaidenName(value);
-        }
-        
-        if (stdHeader === 'EXTENSIONNAME') {
-          value = cleanExtensionName(value);
-        }
-        
-        if (stdHeader === 'REGION') {
-          value = formatRegion(value);
-        }
-        
-        row[colIndex] = value;
       });
     });
     
-    setData(newData);
-    setValidation(validateData(newData));
-  };
-
-const exportToExcel = async () => {
-  const ExcelJS = (await import('exceljs')).default;
-  const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet('Data');
-
-  worksheet.columns = headers.map(header => ({
-    header: header.toUpperCase(),
-    key: header,
-    width: 20,
-    style: {
-      font: { name: 'Calibri', size: 11, bold: true }
-    }
-  }));
-
-  data.slice(1).forEach((row, rowIndex) => {
-    const rowObj = {};
-    headers.forEach((header, colIndex) => {
-      rowObj[header] = row[colIndex];
-    });
-
-    const excelRow = worksheet.addRow(rowObj);
-    
-    excelRow.eachCell((cell) => {
-      cell.style = {
-        font: { name: 'Calibri', size: 11 },
-        alignment: { vertical: 'middle', horizontal: 'left' }
-      };
-
-      const cellKey = `${rowIndex + 2}-${cell.col}`;
-      const hasError = validation.cellErrors[cellKey];
-      const hasWarning = validation.warnings.some(
-        w => w.row === rowIndex + 2 && w.column === cell.col
-      );
-
-      // Special validation for Barangay Certificate IDs
-      const isIdNumberCell = headers[cell.col - 1] === 'IDNUMBER';
-      const govtIdType = row[headers.indexOf('GOVTIDTYPE')];
-      const isBarangayCert = govtIdType?.toString().toUpperCase().includes('BARANGAY CERTIFICATE', 'Barangay Certificate');
-      
-      if (isIdNumberCell && isBarangayCert) {
-        const idValue = row[headers.indexOf('IDNUMBER')]?.toString().toUpperCase();
-        if (idValue !== 'BARANGAY CERTIFICATE') {
-          cell.style.fill = { 
-          };
-          cell.note = {
-            texts: [{ text: 'Must be "Barangay Certificate" for Certificate' }]
-          };
-          return;
-        }
-      }
-    });
-  });
-  
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
@@ -942,12 +465,6 @@ const exportToExcel = async () => {
       filter: isValidating ? 'blur(1px)' : 'none'
     }}>
       <div className="flex justify-between items-center">
-        <div>
-          <Typography variant="h5">Data Cleaning</Typography>
-          <Typography variant="body2" color="textSecondary">
-            Upload and validate beneficiary data files
-          </Typography>
-        </div>
         {fileName && (
           <div className="flex items-center gap-2">
             <Chip label={fileName} onDelete={handleRemoveFile} />
@@ -966,7 +483,7 @@ const exportToExcel = async () => {
             </div>
           ) : (
             <div className="space-y-4">
-              <CloudUpload style={{ fontSize: "4rem", color: "#3f51b5" }} />
+              <CloudUpload style={{ fontSize: "4rem", color: "#1976d2" }} />
               <Typography variant="h6">Drag & drop files here</Typography>
               <Typography variant="body2" color="textSecondary">
                 Supported formats: .xlsx, .csv (Max 10MB)
@@ -984,7 +501,7 @@ const exportToExcel = async () => {
                 onClick={() => fileInputRef.current.click()}
                 startIcon={<CloudUpload />}
               >
-                Browse Files
+                Select File
               </Button>
             </div>
           )}
@@ -1186,7 +703,7 @@ const exportToExcel = async () => {
                   startIcon={<AutoFixHigh />}
                   onClick={handleApplyAllFixes}
                 >
-                  Apply All Fixes
+                  Apply All Fixes except Barangay
                 </Button>
               </Grid>
             </Grid>
@@ -1225,7 +742,7 @@ const exportToExcel = async () => {
                       <Table size="small" stickyHeader>
                         <TableHead>
                           <TableRow>
-                            <TableCell>File Row #</TableCell>
+                            <TableCell>Row #</TableCell>
                             <TableCell>Column</TableCell>
                             <TableCell>Error</TableCell>
                             <TableCell>Original Value</TableCell>
@@ -1294,7 +811,7 @@ const exportToExcel = async () => {
                     <Table size="small" stickyHeader>
                       <TableHead>
                         <TableRow>
-                          <TableCell>File Row #</TableCell>
+                          <TableCell>Row #</TableCell>
                           <TableCell>Column</TableCell>
                           <TableCell>Warning</TableCell>
                           <TableCell>Original Value</TableCell>
@@ -1338,31 +855,63 @@ const exportToExcel = async () => {
               )}
             </div>
           )}
-
-          {activeTab === 1 && (
-            <div className="mt-4">
-              <div className="flex justify-between items-center mb-2">
-                <Typography variant="subtitle1">
-                  Data Preview with Validation ({data.length - 1} rows)
-                </Typography>
+        {activeTab === 1 && (
+          <div className="mt-4">
+            <div className="flex justify-between items-center mb-2">
+              <Typography variant="subtitle1">
+                Data Preview with Validation ({data.length - 1} rows)
+                {editMode && needsRefresh && (
+                  <Typography variant="body2" color="error">
+                    (You must refresh validation after editing)
+                  </Typography>
+                )}
+              </Typography>
+              <div>
+                <Button
+                  variant={editMode ? "contained" : "outlined"}
+                  startIcon={<Edit />}
+                  onClick={() => {
+                    setEditMode(!editMode);
+                    if (!editMode) setNeedsRefresh(false);
+                  }}
+                  sx={{ mr: 2 }}
+                >
+                  {editMode ? 'Editing Mode' : 'Enable Editor'}
+                </Button>
+                {editMode && (
+                  <Button
+                    variant="contained"
+                    color={needsRefresh ? "error" : "primary"}
+                    startIcon={<Refresh />}
+                    onClick={handleRefreshValidation}
+                    sx={{ mr: 2 }}
+                  >
+                    {needsRefresh ? 'Refresh Required' : 'Refresh Validation'}
+                  </Button>
+                )}
                 <Button
                   variant="contained"
+                  color="primary"
                   startIcon={<SaveAlt />}
-                  onClick={() => setShowExportDialog(true)}
+                  onClick={handleExportClick}
+                  disabled={needsRefresh}
                 >
                   Export Data
                 </Button>
               </div>
-              <LazyLoadedDataTable 
-                data={data}
-                headers={headers}
-                validation={validation}
-                pagination={pagination}
-                onChangePage={handleChangePage}
-                onChangeRowsPerPage={handleChangeRowsPerPage}
-              />
             </div>
-          )}
+            <LazyLoadedDataTable 
+              data={data}
+              headers={headers}
+              validation={validation}
+              pagination={pagination}
+              onChangePage={handleChangePage}
+              onChangeRowsPerPage={handleChangeRowsPerPage}
+              onCellEdit={handleCellEdit}
+              editMode={editMode}
+            />
+          </div>
+        )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowValidation(false)}>Close</Button>
@@ -1394,11 +943,11 @@ const exportToExcel = async () => {
           <Typography variant="body2" color="textSecondary" className="mt-2">
             {validation.errors.length > 0 ? (
               <Box color="warning.main">
-                <Warning fontSize="small" /> File contains {validation.errors.length} errors. It is highly advisable to click the "Apply All Fixes" button or use other options to resolve them before exporting.
+                <Warning fontSize="small" /> File contains {validation.errors.length} error{validation.errors.length !== 1 ? 's' : ''}. It is highly advisable to click the "Apply All Fixes" button or use other options to resolve them before exporting.
               </Box>
             ) : (
               <Box color="success.main">
-                <Check fontSize="small" /> All data is valid
+                <Check fontSize="small" /> All values are valid
               </Box>
             )}
           </Typography>
