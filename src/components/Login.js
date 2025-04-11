@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 import api from "../connection/api";
 
 const Login = ({ onLogin }) => {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,50 +17,57 @@ const Login = ({ onLogin }) => {
       navigate("/");
     }
   }, [navigate, onLogin]);
-  
 
-  const handleLogin = async () => {
-    if (!username || !password) {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!email || !password) {
       setError("Both fields are required!");
       return;
     }
   
     setLoading(true);
+    setError("");
+  
     try {
-      const response = await api.post("/api/login", { username, password });
+      const response = await api.post("/api/login", { email, password });
+      
+      // console.log("Login API Response:", response.data);
   
-      console.log("Login API Response:", response.data); // Debugging: Check response
-  
-      const { token, user } = response.data;
-  
-      if (!token) throw new Error("Invalid token received"); // Prevent login if no token
-  
-      localStorage.setItem("authToken", token);
-      localStorage.setItem("user", JSON.stringify(user));
-  
-      Swal.fire({
-        title: "Login Successful!",
-        icon: "success",
-        timer: 1000,
-        showConfirmButton: false,
+      if (response.data.requiresOtp) {
+        localStorage.setItem("otpUserId", response.data.userId.toString());
+        navigate("/verify-otp", {
+          state: { 
+            email,
+            userId: response.data.userId
+          }
+        });
+      } else {
+        throw new Error("Unexpected response - OTP should be required");
+      }
+    } catch (err) {
+      console.error("Login error details:", {
+        error: err,
+        response: err.response?.data,
+        status: err.response?.status
       });
   
-      onLogin(token);
-      navigate("/");
-    } catch (err) {
-      console.error("Login error:", err.response?.data || err.message);
-      setError(err.response?.data?.message || "Invalid login credentials");
-  
+      const errorMessage = err.response?.data?.message || 
+                         err.message || 
+                         "Login failed. Please try again.";
+      
+      setError(errorMessage);
+      
       Swal.fire({
-        title: "Error!",
-        text: err.response?.data?.message || "Login failed",
+        title: "Login Error",
+        text: errorMessage,
         icon: "error",
       });
     } finally {
       setLoading(false);
     }
-  };  
-  
+  };
+
   return (
     <Box
       display="flex"
@@ -78,35 +85,48 @@ const Login = ({ onLogin }) => {
           <Box display="flex" alignItems="center" justifyContent="center" mb={2}>
             <img src="/DAlogo.png" alt="Logo" className="h-12 w-12 mr-2" />
             <Typography variant="h6" fontWeight="bold" textAlign="center">
-              Data Validation and Profiling
+              Data Cleanup Self Service
             </Typography>
           </Box>
-          <TextField
-            fullWidth
-            label="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            type="password"
-            label="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            margin="normal"
-            required
-          />
-          {error && <Typography color="error">{error}</Typography>}
-          <Button
-            onClick={handleLogin}
-            fullWidth
-            variant="contained"
-            sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#4caf50" } }}
-            disabled={loading}
+          <form onSubmit={handleSubmit} style={{ width: '100%' }}>
+            <TextField
+              fullWidth
+              label="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              margin="normal"
+              required
+            />
+            <TextField
+              fullWidth
+              type="password"
+              label="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              margin="normal"
+              required
+            />
+            {error && <Typography color="error">{error}</Typography>}
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#4caf50" } }}
+              disabled={loading}
+            >
+              {loading ? <CircularProgress size={24} sx={{ color: "white" }} /> : "Sign In"}
+            </Button>
+          </form>
+          <Button 
+            onClick={() => navigate("/forgot-password")}
+            sx={{ 
+              mt: 2, 
+              color: "green", 
+              textTransform: 'none',
+              textDecoration: 'underline'
+            }}
           >
-            {loading ? <CircularProgress size={24} sx={{ color: "white" }} /> : "Sign In"}
+            Forgot Password?
           </Button>
           <Typography variant="body2" sx={{ mt: 2 }}>
             Don't have an account?{" "}

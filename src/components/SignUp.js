@@ -10,21 +10,24 @@ import {
   CircularProgress,
   Grid,
   MenuItem,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import Swal from "sweetalert2";
-import api from "../connection/api"; // Ensure this is correctly set up for Axios
+import api from "../connection/api"; 
 
 const SignUp = () => {
   const [formData, setFormData] = useState({
+    username: "",
+    password: "",
+    email: "",
     firstName: "",
     middleName: "",
     lastName: "",
     phoneNumber: "",
-    username: "",
-    email: "",
-    password: "",
+    confirmPassword: "",
     accountLevel: "",
-    status: "",
+    status: false
   });
 
   const [loading, setLoading] = useState(false);
@@ -34,28 +37,51 @@ const SignUp = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value.trim() });
   };
 
-  const handleRegister = async () => {
-    const { firstName, middleName, lastName, phoneNumber, username, email, password, accountLevel, status } = formData;
+  const handleCheckboxChange = (e) => {
+    setFormData({ ...formData, status: e.target.checked });
+  };
 
-    // Validate required fields
-    if (!firstName || !lastName || !phoneNumber || !username || !email || !password || !accountLevel || !status) {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const { firstName, middleName, lastName, phoneNumber, username, email, password, confirmPassword, accountLevel, status } = formData;
+    
+    if (!firstName || !lastName || !phoneNumber || !username || !email || !password || !confirmPassword || !accountLevel) {
       Swal.fire({ title: "Error!", text: "All fields are required!", icon: "error" });
       return;
     }
-
-    // Password length validation
-    if (password.length < 6) {
-      Swal.fire({ title: "Error!", text: "Password must be at least 6 characters.", icon: "error" });
+  
+    if (password !== confirmPassword) {
+      Swal.fire({ title: "Error!", text: "Passwords do not match!", icon: "error" });
       return;
     }
-
+  
+    if (password.length < 8) {
+      Swal.fire({ title: "Error!", text: "Password must be at least 8 characters long including at least one uppercase letter.", icon: "error" });
+      return;
+    }
+  
     setLoading(true);
     try {
-      const response = await api.post("/api/signup", formData);
-      const data = response.data;
+      const tempUser = {
+        username,
+        password,
+        email,
+        firstName,
+        middleName,
+        lastName,
+        phoneNumber,
+        accountLevel,
+        status: status ? "Active" : "Inactive"
+      };
 
-      Swal.fire({ title: "Registration Successful!", icon: "success", timer: 2000, showConfirmButton: false });
-      navigate("/login");
+      const response = await api.post("/api/signup", tempUser);
+
+      navigate("/verify-signup-otp", {
+        state: { 
+          email,
+          tempUser
+        }
+      });
     } catch (err) {
       Swal.fire({
         title: "Error!",
@@ -84,80 +110,39 @@ const SignUp = () => {
           <Box display="flex" flexDirection="column" alignItems="center" textAlign="center" mb={2}>
             <img src="/DAlogo.png" alt="Logo" style={{ height: 48, marginBottom: 8 }} />
             <Typography variant="h6" fontWeight="bold">
-              Data Validation and Profiling Sign Up
+              Data Cleanup Self Service Sign Up
             </Typography>
           </Box>
 
-          <Grid container spacing={2}>
-            <Grid item xs={6}>
-              <TextField fullWidth size="small" label="First Name" name="firstName" value={formData.firstName} onChange={handleChange} required />
+          <form onSubmit={handleSubmit}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" label="First Name" name="firstName" value={formData.firstName} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" label="Middle Name" name="middleName" value={formData.middleName} onChange={handleChange} /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" label="Last Name" name="lastName" value={formData.lastName} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" label="Phone Number" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" label="Username" name="username" value={formData.username} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" type="email" label="Email" name="email" value={formData.email} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" type="password" label="Password" name="password" value={formData.password} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}><TextField fullWidth size="small" type="password" label="Re-enter Password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required /></Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField fullWidth size="small" select label="Account Level" name="accountLevel" value={formData.accountLevel} onChange={handleChange} required>
+                  <MenuItem value="Admin">Developer</MenuItem>
+                  <MenuItem value="User">Admin</MenuItem>
+                  <MenuItem value="Manager">User</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6} display="flex" alignItems="center">
+                <FormControlLabel control={<Checkbox checked={formData.status} onChange={handleCheckboxChange} />} label="Active" />
+              </Grid>
             </Grid>
-            <Grid item xs={6}>
-              <TextField fullWidth size="small" label="Middle Name" name="middleName" value={formData.middleName} onChange={handleChange} required />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField fullWidth size="small" label="Last Name" name="lastName" value={formData.lastName} onChange={handleChange} required />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField fullWidth size="small" label="Phone Number" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField fullWidth size="small" label="Username" name="username" value={formData.username} onChange={handleChange} required />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField fullWidth size="small" type="password" label="Password" name="password" value={formData.password} onChange={handleChange} required />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField
-                fullWidth
-                size="small"
-                select
-                label="Account Level"
-                name="accountLevel"
-                value={formData.accountLevel}
-                onChange={handleChange}
-                required
-              >
-                <MenuItem value="Admin">Admin</MenuItem>
-                <MenuItem value="User">User</MenuItem>
-                <MenuItem value="Manager">Manager</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid item xs={6}>
-              <TextField
-                fullWidth
-                size="small"
-                select
-                label="Status"
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                required
-              >
-                <MenuItem value="Active">Active</MenuItem>
-                <MenuItem value="Inactive">Inactive</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid item xs={12}>
-              <TextField fullWidth size="small" type="email" label="Email" name="email" value={formData.email} onChange={handleChange} required />
-            </Grid>
-          </Grid>
 
-          <Button
-            onClick={handleRegister}
-            fullWidth
-            variant="contained"
-            sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#4caf50" } }}
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={24} sx={{ color: "white" }} /> : "Sign Up"}
-          </Button>
+            <Button type="submit" fullWidth variant="contained" sx={{ mt: 2, backgroundColor: "green", "&:hover": { backgroundColor: "#4caf50" } }} disabled={loading}>
+              {loading ? <CircularProgress size={24} sx={{ color: "white" }} /> : "Sign Up"}
+            </Button>
+          </form>
 
           <Typography variant="body2" sx={{ mt: 2, textAlign: "center" }}>
-            Already have an account?{" "}
-            <Button onClick={() => navigate("/login")} sx={{ color: "green", textDecoration: "underline" }}>
-              Sign In
-            </Button>
+            Already have an account? <Button onClick={() => navigate("/login")} sx={{ color: "green", textDecoration: "underline" }}>Sign In</Button>
           </Typography>
 
           <Typography variant="caption" color="gray" sx={{ mt: 2, textAlign: "center", display: "block" }}>
