@@ -49,20 +49,18 @@ const Layout = () => {
 
   const NavItems = [
     { name: "Dashboard", icon: <Home size={20} />, path: "/dashboard" },
+    { name: "Automatic file fixer", icon: <Import size={20} />, path: "/import" }, 
     { 
       name: "Data matching and duplicate check", 
       icon: <BarChart2 size={20} />, 
       path: null,
       subItems: [
-        { name: "Data Matching", path: "/data-matching" },
-        { name: "Duplicate Checker", path: "/duplicate" }
+        { name: "Data processing tool", path: "/duplicate" }
       ]
     },
-    { name: "Automatic file fixer", icon: <Import size={20} />, path: "/import" }, 
     { name: "Users", icon: <UsersIcon size={20} />, path: "/users" },
   ];
 
-  // Social media links data
   const socialLinks = [
     { icon: <Github size={20} />, url: "https://github.com/djacob0", color: "hover:text-gray-300" },
     { icon: <Mail size={20} />, url: "mailto:jacob35lol@gmail.com", color: "hover:text-red-300" },
@@ -71,7 +69,6 @@ const Layout = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Top Navigation Bar (no background image) */}
       <header className="fixed top-0 left-0 right-0 h-16 bg-white shadow-md z-50 flex items-center justify-between px-4 md:px-6">
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -82,7 +79,7 @@ const Layout = () => {
 
         <div className="flex items-center space-x-3">
           <img src="/DAlogo2.png" alt="Logo" className="w-10 h-10 rounded-full object-cover" />
-          <h1 className="text-xl font-bold text-gray-800 hidden md:block">Data Cleanup</h1>
+          <h1 className="text-xl font-bold text-gray-800 hidden md:block">Data Cleanup Self Service</h1>
         </div>
 
         <button
@@ -95,7 +92,6 @@ const Layout = () => {
       </header>
 
       <div className="flex flex-1 pt-16">
-        {/* Sidebar with DA.png background only */}
         <aside
           className={`fixed md:static top-16 bottom-0 left-0 w-64 transform transition-transform duration-300 z-40 ${
             isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
@@ -107,7 +103,6 @@ const Layout = () => {
             backgroundRepeat: "no-repeat"
           }}
         >
-          {/* Dark overlay for better text visibility */}
           <div className="absolute inset-0 bg-black bg-opacity-50"></div>
           
           <div className="relative z-10 p-4 flex flex-col h-full">
@@ -163,7 +158,6 @@ const Layout = () => {
               ))}
             </nav>
 
-            {/* Social media icons section added here */}
             <div className="mt-auto pb-4">
               <div className="border-t border-gray-600 pt-4">
                 <p className="text-gray-300 text-center text-sm mb-3 px-2">Connect with us :</p>

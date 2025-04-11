@@ -5,19 +5,24 @@ import {
   Avatar, 
   Chip, 
   Divider,
-  LinearProgress,
   Tooltip,
-  IconButton
+  IconButton,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Badge
 } from "@mui/material";
 import { 
   PersonOutline, 
   EmailOutlined, 
   PhoneOutlined, 
   CalendarTodayOutlined,
-  SecurityOutlined,
   StarBorderOutlined,
   EditOutlined,
-  RefreshOutlined
+  RefreshOutlined,
+  Notifications
 } from '@mui/icons-material';
 import { motion } from "framer-motion";
 
@@ -26,8 +31,10 @@ const Dashboard = ({ isCollapsed = false }) => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [openModal, setOpenModal] = useState(false);
 
-  // Helper function to concatenate names
   const formatFullName = (firstName, middleName, lastName) => {
     const nameParts = [
       firstName?.trim(), 
@@ -56,6 +63,11 @@ const Dashboard = ({ isCollapsed = false }) => {
       setUser(response.data.user);
       setError("");
       setLastUpdated(new Date());
+      
+      if (response.data.user.accountLevel <= 2) {
+        setIsAdmin(true);
+        fetchPendingUsers();
+      }
     } catch (err) {
       console.error("Profile fetch error:", err.response?.data?.message || err.message);
       setError("Failed to load profile. Please log in again.");
@@ -65,62 +77,66 @@ const Dashboard = ({ isCollapsed = false }) => {
     }
   };
 
+  const fetchPendingUsers = async () => {
+    const token = localStorage.getItem("authToken");
+    
+    try {
+      const response = await api.get("/api/pending-approvals", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPendingUsers(response.data.pendingUsers);
+    } catch (err) {
+      console.error("Fetch pending users error:", err);
+    }
+  };
+
+  const handleApprove = async (userId) => {
+    const token = localStorage.getItem("authToken");
+  
+    try {
+      const response = await api.put(`/api/approve-user/${userId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      fetchPendingUsers();
+    } catch (err) {
+      console.error("Approve user error:", err.response?.data?.message || err.message);
+    }
+  };
+
+  const handleReject = async (userId) => {
+    const token = localStorage.getItem("authToken");
+    
+    try {
+      await api.put(`/api/reject-user/${userId}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      fetchPendingUsers();
+    } catch (err) {
+      console.error("Reject user error:", err);
+    }
+  };
+
+  const renderStatCard = (label, value, icon, color) => (
+    <div className="flex items-center gap-3 border border-gray-200 rounded-lg p-4 shadow-sm">
+      <div className={`text-${color}-500`}>
+        {icon}
+      </div>
+      <div>
+        <Typography variant="body1" className="font-medium text-gray-800">
+          {label}
+        </Typography>
+        <Typography variant="body2" className="text-gray-600">
+          {value || 'N/A'}
+        </Typography>
+      </div>
+    </div>
+  );
+
   useEffect(() => {
     fetchProfile();
   }, []);
 
-  const renderStatCard = (title, value, icon, color = "primary") => (
-    <motion.div 
-      whileHover={{ scale: 1.03 }}
-      className={`p-4 bg-gradient-to-br from-${color}-50 to-white shadow-md rounded-lg flex items-center gap-4 transition-all duration-300 border border-${color}-100`}
-    >
-      <div className={`p-3 rounded-full bg-${color}-100`}>
-        {React.cloneElement(icon, { className: `text-${color}-600` })}
-      </div>
-      <div>
-        <Typography variant="subtitle2" className="text-gray-500">
-          {title}
-        </Typography>
-        <Typography variant="h6" className="font-medium text-gray-800">
-          {value || 'N/A'}
-        </Typography>
-      </div>
-    </motion.div>
-  );
-
-  if (loading && !user) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64">
-        <LinearProgress className="w-1/2" />
-        <Typography className="mt-4 text-gray-600">
-          Loading your profile...
-        </Typography>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="p-6 bg-red-50 rounded-lg text-center max-w-md mx-auto mt-8"
-      >
-        <Typography variant="h6" className="text-red-600 mb-2">
-          Error Loading Profile
-        </Typography>
-        <Typography className="text-gray-700 mb-4">{error}</Typography>
-        <button 
-          onClick={fetchProfile}
-          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-        >
-          Try Again
-        </button>
-      </motion.div>
-    );
-  }
-
-  const fullName = formatFullName(user.firstName, user.middleName, user.lastName);
+  const fullName = user ? formatFullName(user.firstName, user.middleName, user.lastName) : 'Loading...';
 
   return (
     <div className="p-4 md:p-8">
@@ -136,14 +152,33 @@ const Dashboard = ({ isCollapsed = false }) => {
               variant="h3" 
               className="font-bold text-gray-900"
             >
-              Welcome back, <span className="text-primary-600">{user.username}</span>!
+              Welcome back, <span className="text-primary-600">{user?.username || 'Loading...'}</span>!
             </Typography>
             <Typography variant="subtitle1" className="text-gray-500">
               Here's your account overview
             </Typography>
           </motion.div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            {/* Notification Bell with Badge - Only for Admins */}
+            {isAdmin && (
+              <Tooltip title={pendingUsers.length > 0 ? "Pending approvals" : "No pending approvals"}>
+                <IconButton 
+                  onClick={() => pendingUsers.length > 0 && setOpenModal(true)}
+                  color={pendingUsers.length > 0 ? "primary" : "default"}
+                  disabled={pendingUsers.length === 0}
+                >
+                  <Badge 
+                    badgeContent={pendingUsers.length} 
+                    color="error"
+                    max={99}
+                  >
+                    <Notifications />
+                  </Badge>
+                </IconButton>
+              </Tooltip>
+            )}
+            
             {lastUpdated && (
               <Typography variant="caption" className="text-gray-400">
                 Last updated: {lastUpdated.toLocaleTimeString()}
@@ -157,7 +192,7 @@ const Dashboard = ({ isCollapsed = false }) => {
           </div>
         </div>
 
-        {/* Main Content Grid */}
+        {/* Profile and Account Details Section */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Profile Card */}
           <motion.div 
@@ -170,17 +205,24 @@ const Dashboard = ({ isCollapsed = false }) => {
               <div className="relative">
                 <Avatar
                   alt="Profile Picture"
-                  src={user.picture || "/default-avatar.jpg"}
-                  className="w-40 h-40 mx-auto mb-4 border-4 border-primary-200 shadow-md"
-                />
-                <Tooltip title="Edit profile">
+                  src={user?.picture}
+                  className="w-150 h-150 mx-auto mb-4 border-20 border-primary-200 shadow-md"
+                  sx={{
+                    backgroundColor: '#e0e0e0',
+                    color: '#757575',
+                    fontSize: '4rem'
+                  }}
+                >
+                  {!user?.picture && <PersonOutline fontSize="inherit" />}
+                </Avatar>
+                {/* <Tooltip title="Edit profile">
                   <IconButton 
                     className="absolute bottom-4 right-1/4 bg-primary-100 hover:bg-primary-200"
                     size="small"
                   >
                     <EditOutlined fontSize="small" className="text-primary-600" />
                   </IconButton>
-                </Tooltip>
+                </Tooltip> */}
               </div>
               
               <Typography variant="h5" className="font-semibold text-gray-800 mt-2">
@@ -188,7 +230,7 @@ const Dashboard = ({ isCollapsed = false }) => {
               </Typography>
               
               <Chip 
-                label={`@${user.username}`} 
+                label={`@${user?.username || 'Loading...'}`} 
                 color="primary" 
                 variant="outlined"
                 size="small"
@@ -200,8 +242,8 @@ const Dashboard = ({ isCollapsed = false }) => {
                   Account Status
                 </Typography>
                 <Chip 
-                  label={user.status} 
-                  color={user.status === 'active' ? 'success' : 'warning'}
+                  label={user?.status || 'Loading...'} 
+                  color={user?.status === 'active' ? 'success' : 'warning'}
                   size="small"
                 />
               </div>
@@ -238,31 +280,31 @@ const Dashboard = ({ isCollapsed = false }) => {
                 )}
                 {renderStatCard(
                   'Email Address', 
-                  user.email, 
+                  user?.email || 'Loading...', 
                   <EmailOutlined />,
                   "secondary"
                 )}
                 {renderStatCard(
                   'Phone Number', 
-                  user.phoneNumber, 
+                  user?.phoneNumber || 'Loading...', 
                   <PhoneOutlined />,
                   "info"
                 )}
                 {renderStatCard(
                   'Account Level', 
-                  user.accountLevel, 
+                  user?.accountLevel || 'Loading...', 
                   <StarBorderOutlined />,
                   "warning"
                 )}
                 {renderStatCard(
                   'Created By', 
-                  user.created_by, 
+                  user?.created_by || 'Loading...', 
                   <PersonOutline />,
                   "success"
                 )}
                 {renderStatCard(
                   'Member Since', 
-                  new Date(user.created_at).toLocaleDateString(), 
+                  user?.created_at ? new Date(user.created_at).toLocaleDateString() : 'Loading...', 
                   <CalendarTodayOutlined />,
                   "error"
                 )}
@@ -271,6 +313,78 @@ const Dashboard = ({ isCollapsed = false }) => {
           </motion.div>
         </div>
       </div>
+
+      {/* Pending Users Modal */}
+      <Dialog 
+        open={openModal} 
+        onClose={() => setOpenModal(false)} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle className="flex items-center">
+          Pending User Approvals
+          {pendingUsers.length > 0 && (
+            <Chip 
+              label={`${pendingUsers.length} pending`} 
+              color="primary" 
+              size="small" 
+              className="ml-3"
+            />
+          )}
+        </DialogTitle>
+        <DialogContent>
+          {pendingUsers.length > 0 ? (
+            <div className="space-y-4 mt-2">
+              {pendingUsers.map((pendingUser) => (
+                <div 
+                  key={pendingUser.id} 
+                  className="flex justify-between items-center p-3 border-b border-gray-100 last:border-0"
+                >
+                  <div>
+                    <Typography variant="subtitle1" className="font-medium">
+                      {pendingUser.username}
+                    </Typography>
+                    <Typography variant="body2" className="text-gray-600">
+                      {pendingUser.email}
+                    </Typography>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="contained"
+                      color="success"
+                      size="small"
+                      onClick={() => handleApprove(pendingUser.id)}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      size="small"
+                      onClick={() => handleReject(pendingUser.id)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Typography variant="body2" className="text-gray-500 text-center py-4">
+              No pending users for approval.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setOpenModal(false)} 
+            color="primary"
+            variant="contained"
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };

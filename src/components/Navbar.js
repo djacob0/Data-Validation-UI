@@ -1,13 +1,14 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, Upload, ListOrdered, LogOut } from "lucide-react";
+import { Menu, X, Upload, ListOrdered, LogOut, Users } from "lucide-react";
 import Swal from "sweetalert2";
+import api from "../connection/api";
 
 const Navbar = ({ onSignOut }) => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const location = useLocation();
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
     Swal.fire({
       title: "Are you sure?",
       text: "You will be logged out of your account.",
@@ -16,9 +17,29 @@ const Navbar = ({ onSignOut }) => {
       confirmButtonColor: "#d33",
       cancelButtonColor: "#3085d6",
       confirmButtonText: "Yes, Sign Out!",
-    }).then((result) => {
+    }).then(async (result) => {
       if (result.isConfirmed) {
-        onSignOut();
+        const token = localStorage.getItem("authToken");
+
+        if (!token) {
+          console.warn("No token found. Redirecting to login...");
+          window.location.href = "/login";
+          return;
+        }
+
+        try {
+          // Send logout request
+          await api.post("/api/logout", {}, { headers: { Authorization: `Bearer ${token}` } });
+
+          // Clear session storage
+          localStorage.removeItem("authToken");
+          localStorage.removeItem("user");
+
+          // Redirect to login page
+          window.location.href = "/login";
+        } catch (err) {
+          console.error("Logout error:", err.response?.data?.message || err.message);
+        }
       }
     });
   };
@@ -33,7 +54,7 @@ const Navbar = ({ onSignOut }) => {
         <span className="text-lg font-bold"></span>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar (Desktop) */}
       <nav className="fixed top-0 left-0 h-full w-64 bg-green-900 bg-opacity-80 text-white p-4 shadow-lg z-40 hidden lg:block pt-14">
         <ul className="mt-6 space-y-4">
           <li>
@@ -68,6 +89,17 @@ const Navbar = ({ onSignOut }) => {
               <span>Total Count</span>
             </Link>
           </li>
+          <li>
+            <Link
+              to="/users"
+              className={`flex items-center space-x-2 p-3 rounded-md transition ${
+                location.pathname === "/users" ? "bg-green-700 font-bold" : "hover:bg-green-800"
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              <span>Users</span>
+            </Link>
+          </li>
           <li className="mt-6">
             <button
               onClick={handleSignOut}
@@ -87,10 +119,10 @@ const Navbar = ({ onSignOut }) => {
           onClick={() => setIsMobileOpen(false)}
         />
       )}
-        <nav
-          className={`fixed top-14 left-0 h-[calc(100vh-56px)] bg-[#084c33] bg-opacity-100 text-white p-4 shadow-lg transition-transform duration-300 ease-in-out z-40
+      <nav
+        className={`fixed top-14 left-0 h-[calc(100vh-56px)] bg-[#084c33] bg-opacity-100 text-white p-4 shadow-lg transition-transform duration-300 ease-in-out z-40
             ${isMobileOpen ? "w-40 translate-x-0 opacity-90" : "-translate-x-full opacity-0"} lg:hidden`}
-        >
+      >
         <ul className="mt-6 space-y-4">
           <li>
             <Link
@@ -117,7 +149,7 @@ const Navbar = ({ onSignOut }) => {
           </li>
           <li>
             <Link
-              to="/count" 
+              to="/count"
               className={`flex items-center space-x-2 p-3 rounded-md transition ${
                 location.pathname === "/count" ? "bg-green-700 font-bold" : "hover:bg-green-800"
               }`}
@@ -125,6 +157,18 @@ const Navbar = ({ onSignOut }) => {
             >
               <ListOrdered className="w-5 h-5" />
               <span>Total Count</span>
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="/users"
+              className={`flex items-center space-x-2 p-3 rounded-md transition ${
+                location.pathname === "/users" ? "bg-green-700 font-bold" : "hover:bg-green-800"
+              }`}
+              onClick={() => setIsMobileOpen(false)}
+            >
+              <Users className="w-5 h-5" />
+              <span>Users</span>
             </Link>
           </li>
           <li className="mt-6">
