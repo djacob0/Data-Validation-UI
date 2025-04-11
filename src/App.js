@@ -11,7 +11,6 @@ import DuplicateValidator from "./components/DuplicateValidator";
 import { DataProvider } from "./contexts/DataContext";
 import Users from "./components/Users";
 import ForgotPassword from "./components/ForgotPassword";
-import DataMatching from "./components/DataMatching";
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -38,7 +37,6 @@ const App = () => {
               <Route path="/" element={<Layout onSignOut={handleSignOut} />}>
                 <Route index element={<Dashboard />} />
                 <Route path="import" element={<Import />} />
-                <Route path="data-matching" element={<DataMatching />} />
                 <Route path="duplicate" element={<DuplicateValidator />} />
                 <Route path="users" element={<Users />} />
               </Route>
