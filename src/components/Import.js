@@ -1,21 +1,14 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { 
-  Button, Card, CardContent, Typography, Box, Paper, Table, TableBody, 
-  TableCell, TableHead, TableRow, Chip, LinearProgress, Dialog, 
-  DialogTitle, DialogContent, DialogActions, TextField, Checkbox, 
-  FormControlLabel, Tooltip, Tab, Tabs, IconButton, Grid,
-  TablePagination, CircularProgress, Fade, Slide, Snackbar, Alert
+import {  Button, Card, CardContent, Typography, Box, Paper, Table, TableBody, TableCell, TableHead, TableRow, Chip, LinearProgress, Dialog, 
+DialogTitle, DialogContent, DialogActions, TextField, Tooltip, Tab, Tabs, IconButton, Grid, TablePagination, CircularProgress, Slide,
 } from "@mui/material";
-import { 
-  CloudUpload, Delete, CheckCircle, Error, Close, Refresh, 
-  SaveAlt, Warning, Check, AutoFixHigh, Filter1, Spellcheck,
-  Transgender, DateRange, Numbers, LocationOn, Badge, Edit, Save
+import { CloudUpload, Delete, CheckCircle, Error, Close, Refresh, SaveAlt, Warning, Check, AutoFixHigh, Filter1, Spellcheck,
+Male, LocationOn, Badge, Edit, Save
 } from '@mui/icons-material';
 import Swal from "sweetalert2";
 import api from "../connection/api";
-import { standardizeHeader, cleanText, cleanNameText, formatMobile, formatGender, cleanMiddleName, cleanExtensionName, cleanMotherMaidenName,
-  formatRegion, validateSystemNumber, validateIdNumber, validateProvince, validateCityMunicipality, validateData,applyAutoFix, applyAllFixes
+import { standardizeHeader, validateData, applyAutoFix, applyAllFixes
 } from '../utils/AutoFixValidations';
 
 const ValidationProgressBar = ({ progress, isValidating }) => (
@@ -40,7 +33,6 @@ const ValidationProgressBar = ({ progress, isValidating }) => (
 const LazyLoadedDataTable = ({ 
   data, 
   headers, 
-  validation, 
   pagination, 
   onChangePage, 
   onChangeRowsPerPage,
@@ -241,7 +233,8 @@ const Import = () => {
       Swal.fire({
         title: 'Validation Required',
         text: 'You must refresh validation after editing before exporting',
-        icon: 'warning'
+        icon: 'warning',
+        timer: 3000
       });
     } else {
       setShowExportDialog(true);
@@ -629,7 +622,7 @@ const Import = () => {
                 <Button
                   fullWidth
                   variant="outlined"
-                  startIcon={<Transgender />}
+                  startIcon={<Male />}
                   onClick={() => applyFix('gender')}
                 >
                   Standardize Gender
