@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { 
-  Card, 
-  CardContent, 
-  TextField, 
-  Button, 
-  Typography, 
-  Box, 
-  CircularProgress,
-  Grid
+import { Card, CardContent, TextField, Button, Typography, Box, CircularProgress, Grid
 } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "../connection/api";
@@ -106,7 +98,8 @@ const ForgotPassword = () => {
       Swal.fire({
         title: "Success!",
         text: "Password reset successfully. Redirecting to login...",
-        icon: "success"
+        icon: "success",
+        timer: 3000
       }).then(() => {
         navigate("/login");
       });

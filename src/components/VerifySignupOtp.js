@@ -1,14 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  TextField,
-  Button,
-  Typography,
-  Box,
-  CircularProgress,
-  Grid
+import { Card, CardContent, TextField, Button, Typography, Box, CircularProgress, Grid
 } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "../connection/api";
@@ -73,7 +65,7 @@ const VerifySignupOtp = () => {
         title: "Success!",
         text: "Account verified successfully",
         icon: "success",
-        timer: 1500
+        timer: 3000
       });
 
       navigate("/login");
@@ -132,7 +124,7 @@ const VerifySignupOtp = () => {
         title: "Error!",
         text: errorMessage,
         icon: "error",
-        timer: 2000
+        timer: 3000
       });
     } finally {
       setLoading(false);

@@ -1,17 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Card,
-  CardContent,
-  TextField,
-  Button,
-  Typography,
-  Box,
-  CircularProgress,
-  Grid,
-  MenuItem,
-  FormControlLabel,
-  Checkbox,
+import { Card, CardContent, TextField, Button, Typography, Box, CircularProgress, Grid, MenuItem
 } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "../connection/api"; 
@@ -71,7 +60,6 @@ const SignUp = () => {
         lastName,
         phoneNumber,
         accountLevel,
-        status: status ? "Active" : "Inactive"
       };
 
       const response = await api.post("/api/signup", tempUser);
@@ -87,6 +75,7 @@ const SignUp = () => {
         title: "Error!",
         text: err.response?.data?.message || "Failed to sign up",
         icon: "error",
+        timer: 3000
       });
     } finally {
       setLoading(false);
@@ -130,9 +119,6 @@ const SignUp = () => {
                   <MenuItem value="User">Admin</MenuItem>
                   <MenuItem value="Manager">User</MenuItem>
                 </TextField>
-              </Grid>
-              <Grid item xs={12} sm={6} display="flex" alignItems="center">
-                <FormControlLabel control={<Checkbox checked={formData.status} onChange={handleCheckboxChange} />} label="Active" />
               </Grid>
             </Grid>
 

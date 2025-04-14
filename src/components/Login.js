@@ -62,6 +62,7 @@ const Login = ({ onLogin }) => {
         title: "Login Error",
         text: errorMessage,
         icon: "error",
+        timer: 3000
       });
     } finally {
       setLoading(false);
