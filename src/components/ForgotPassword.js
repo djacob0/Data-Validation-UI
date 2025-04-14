@@ -99,7 +99,7 @@ const ForgotPassword = () => {
         title: "Success!",
         text: "Password reset successfully. Redirecting to login...",
         icon: "success",
-        timer: 3000
+        timer: 2000
       }).then(() => {
         navigate("/login");
       });

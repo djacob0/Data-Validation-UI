@@ -65,7 +65,7 @@ const VerifySignupOtp = () => {
         title: "Success!",
         text: "Account verified successfully",
         icon: "success",
-        timer: 3000
+        timer: 2000
       });
 
       navigate("/login");
@@ -111,7 +111,7 @@ const VerifySignupOtp = () => {
           </div>
         `,
         icon: "success",
-        timer: 3000
+        timer: 2000
       });
   
     } catch (err) {
@@ -124,7 +124,7 @@ const VerifySignupOtp = () => {
         title: "Error!",
         text: errorMessage,
         icon: "error",
-        timer: 3000
+        timer: 2000
       });
     } finally {
       setLoading(false);

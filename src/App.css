@@ -13,6 +13,14 @@
   }
 }
 
+.swal-override {
+  z-index: 99999 !important;
+}
+
+.MuiDialog-root {
+  z-index: 1500;
+}
+
 .App-header {
   background-color: #282c34;
   min-height: 100vh;

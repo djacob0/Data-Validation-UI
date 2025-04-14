@@ -75,7 +75,7 @@ const SignUp = () => {
         title: "Error!",
         text: err.response?.data?.message || "Failed to sign up",
         icon: "error",
-        timer: 3000
+        timer: 2000
       });
     } finally {
       setLoading(false);

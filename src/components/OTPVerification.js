@@ -54,7 +54,7 @@ const OTPVerification = ({ onVerify }) => {
             title: "Success!",
             text: "You're now logged in",
             icon: "success",
-            timer: 3000
+            timer: 2000
         });
 
         onVerify(response.data.token);
@@ -68,7 +68,7 @@ const OTPVerification = ({ onVerify }) => {
             title: "Error!",
             text: errorMessage,
             icon: "error",
-            timer: 3000
+            timer: 2000
         });
         
         // Clear OTP field on error
@@ -106,7 +106,7 @@ const OTPVerification = ({ onVerify }) => {
             title: "Success!",
             text: "New OTP sent to your email",
             icon: "success",
-            timer: 3000
+            timer: 2000
         });
     } catch (err) {
         setError(err.message);
@@ -114,7 +114,7 @@ const OTPVerification = ({ onVerify }) => {
             title: "Error!",
             text: err.message,
             icon: "error",
-            timer: 3000
+            timer: 2000
         });
     } finally {
         setLoading(false);
