@@ -86,7 +86,7 @@ const Login = ({ onLogin }) => {
           <Box display="flex" alignItems="center" justifyContent="center" mb={2}>
             <img src="/DAlogo.png" alt="Logo" className="h-12 w-12 mr-2" />
             <Typography variant="h6" fontWeight="bold" textAlign="center">
-              Data Cleanup Self Service
+              Data Cleaning Self Service
             </Typography>
           </Box>
           <form onSubmit={handleSubmit} style={{ width: '100%' }}>

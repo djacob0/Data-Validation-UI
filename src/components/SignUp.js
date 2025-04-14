@@ -99,7 +99,7 @@ const SignUp = () => {
           <Box display="flex" flexDirection="column" alignItems="center" textAlign="center" mb={2}>
             <img src="/DAlogo.png" alt="Logo" style={{ height: 48, marginBottom: 8 }} />
             <Typography variant="h6" fontWeight="bold">
-              Data Cleanup Self Service Sign Up
+              Data Cleaning Self Service Sign Up
             </Typography>
           </Box>
 

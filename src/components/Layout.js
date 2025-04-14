@@ -3,12 +3,14 @@ import { Outlet, Link, useNavigate, useLocation } from "react-router-dom";
 import { Menu, X, Users as UsersIcon, BarChart2, LogOut, Home, Import, Github, Mail, Facebook, ChevronDown, ChevronUp } from "lucide-react";
 import Swal from "sweetalert2";
 import api from "../connection/api";
+import { useFileContext } from '../context/FileContext';
 
 const Layout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDuplicateCheckerOpen, setIsDuplicateCheckerOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { fileState, clearFileData } = useFileContext(); // Destructure what you need
 
   const handleNavClick = () => {
     setIsSidebarOpen(false);
@@ -38,6 +40,7 @@ const Layout = () => {
 
           localStorage.removeItem("authToken");
           localStorage.removeItem("user");
+          clearFileData(); // Clear file data on logout
         } catch (err) {
           console.error("Logout error:", err.response?.data?.message || err.message);
         } finally {
@@ -49,13 +52,13 @@ const Layout = () => {
 
   const NavItems = [
     { name: "Dashboard", icon: <Home size={20} />, path: "/dashboard" },
-    { name: "Automatic file fixer", icon: <Import size={20} />, path: "/import" }, 
+    { name: "SmartCleaner", icon: <Import size={20} />, path: "/import" }, 
     { 
-      name: "Data matching and duplicate check", 
+      name: "Match & Dedup", 
       icon: <BarChart2 size={20} />, 
       path: null,
       subItems: [
-        { name: "Data processing tool", path: "/duplicate" }
+        { name: "ProcessTool", path: "/duplicate" }
       ]
     },
     { name: "Users", icon: <UsersIcon size={20} />, path: "/users" },
@@ -79,7 +82,7 @@ const Layout = () => {
 
         <div className="flex items-center space-x-3">
           <img src="/DAlogo2.png" alt="Logo" className="w-10 h-10 rounded-full object-cover" />
-          <h1 className="text-xl font-bold text-gray-800 hidden md:block">Data Cleanup Self Service</h1>
+          <h1 className="text-xl font-bold text-gray-800 hidden md:block">Data Cleaning Self Service</h1>
         </div>
 
         <button
@@ -180,9 +183,9 @@ const Layout = () => {
         </aside>
 
         <main className="flex-1 overflow-y-auto bg-gray-50">
-          <div className="p-4 md:p-6">
-            <Outlet />
-          </div>
+        <div className="p-4 md:p-6">
+          <Outlet context={{ fileState }} /> {/* Pass fileState to child routes */}
+        </div>
         </main>
       </div>
 
