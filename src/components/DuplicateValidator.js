@@ -1,26 +1,45 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { Button, Card, CardContent, Typography, LinearProgress,Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Chip, Box, Table, 
-  TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Collapse, IconButton, TablePagination, Tabs, Tab, ToggleButton, ToggleButtonGroup
+import {
+  Button, Card, CardContent, Typography, LinearProgress, Dialog, DialogTitle, DialogContent,
+  DialogActions, CircularProgress, Chip, Box, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, Paper, Collapse, IconButton, TablePagination, Tabs, Tab,
+  ToggleButton, ToggleButtonGroup, TextField, FormControlLabel, Checkbox, InputAdornment,
+  Grid, List, ListItem, ListItemText
 } from "@mui/material";
-import { CloudUpload, Delete, CheckCircle, SaveAlt, ErrorOutline, KeyboardArrowDown, KeyboardArrowUp, CompareArrows, DataArray
+
+import {
+  CloudUpload, Delete, CheckCircle, SaveAlt, ErrorOutline, KeyboardArrowDown,
+  KeyboardArrowUp, CompareArrows, DataArray, Email, Send, Search, FilterList, Clear,
+  CheckCircle as CheckCircleIcon, Edit as EditIcon, Error as ErrorIcon, Info as InfoIcon
 } from '@mui/icons-material';
 import Swal from "sweetalert2";
-import dataMatchingAPI from "../connection/dataMatchingAPI";
+import dataMatchingAPI from "../connection/dataMatchingAPI"
+import api from "../connection/api";
+import { useFileContext } from '../context/FileContext';
 import { standardizeHeader, validateData } from "../utils/DuplicateValidations";
+import { processFile, matchDataWithAPI } from "../utils/FileProcessing";
+import { exportValidatedData, sendValidationResults } from "../utils/ExportUtils";
+
 
 const DataProcessingTool = () => {
   const fileInputRef = useRef(null);
+  
+  const { 
+    fileState, 
+    setFileName, 
+    setFileSize, 
+    setMatchedData, 
+    setUnmatchedData,
+    setOriginalHeaders,
+    setOriginalData,
+    clearFileData 
+  } = useFileContext();
+  
   const [processing, setProcessing] = useState(false);
   const [matching, setMatching] = useState(false);
-  const [fileName, setFileName] = useState("");
-  const [fileSize, setFileSize] = useState(0);
-  const [matchedData, setMatchedData] = useState([]);
-  const [unmatchedData, setUnmatchedData] = useState([]);
   const [displayMode, setDisplayMode] = useState('ALL');
   const [openRows, setOpenRows] = useState({});
-  const [originalHeaders, setOriginalHeaders] = useState([]);
-  const [originalData, setOriginalData] = useState([]);
   const [saveDisabled, setSaveDisabled] = useState(true);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -30,20 +49,61 @@ const DataProcessingTool = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
-  const [showMatched, setShowMatched] = useState(true);
-  const [showUnmatched, setShowUnmatched] = useState(true);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailData, setEmailData] = useState({
+    recipient: localStorage.getItem('userEmail') || '',
+    subject: 'Data Validation Results',
+    message: 'Please find attached the validation results for your data.',
+    sendValid: true,
+    sendInvalid: true
+  });
 
   useEffect(() => {
-    if (!matching && (matchedData.length > 0 || unmatchedData.length > 0)) {
+    if (fileState.fileName) {
+      setExportFileName(fileState.fileName.replace(/\.[^/.]+$/, ""));
+    }
+    
+    setOpenRows({});
+    setValidationDialogOpen(false);
+    setIsValidating(false);
+    setEmailDialogOpen(false);
+    setPage(0);
+  }, [fileState.fileName]);
+
+  useEffect(() => {
+    if (!matching && (fileState.matchedData.length > 0 || fileState.unmatchedData.length > 0)) {
       setSaveDisabled(false);
     } else {
       setSaveDisabled(true);
     }
-  }, [matching, matchedData, unmatchedData]);
-
+  }, [matching, fileState.matchedData, fileState.unmatchedData]);
 
   const handleToggleRow = (id) => {
     setOpenRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const [filters, setFilters] = useState({
+    rsbsaNo: '',
+    name: '',
+    status: '',
+    remarks: ''
+  });
+
+  const handleFilterChange = (filterName) => (event) => {
+    setFilters({
+      ...filters,
+      [filterName]: event.target.value
+    });
+    setPage(0);
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      rsbsaNo: '',
+      name: '',
+      status: '',
+      remarks: ''
+    });
   };
 
   const handleChangePage = (event, newPage) => {
@@ -54,102 +114,57 @@ const DataProcessingTool = () => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-
-  const processFile = async (file) => {
-    setProcessing(true);
-    setMatchedData([]);
-    setUnmatchedData([]);
-    setFileName(file.name);
-    setExportFileName(file.name.replace(/\.[^/.]+$/, ""));
-    setPage(0);
-    setSaveDisabled(true);
-    
-    const reader = new FileReader();
-    reader.onload = async (e) => {
+      const handleFileUpload = async (file) => {
       try {
-        const workbook = XLSX.read(e.target.result, { type: "binary" });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const parsedData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-
-        if (parsedData.length < 2) {
-          Swal.fire("Error", "The file is empty or has no data rows", "error");
-          setProcessing(false);
-          return;
-        }
-
-        const headers = parsedData[0].map(h => String(h).trim());
-        setOriginalHeaders(headers);
-        
-        const getColIndex = (possibleNames) => {
-          const index = headers.findIndex(h => 
-            possibleNames.some(name => 
-              String(h).trim().toUpperCase() === name
-            )
-          );
-          return index !== -1 ? index : null;
-        };
-
-        const colIndices = {
-          rsbsa: getColIndex(['RSBSASYSTEMGENERATEDNUMBER', 'RSBSA_NO']),
-          firstName: getColIndex(['FIRSTNAME', 'FIRST_NAME']),
-          middleName: getColIndex(['MIDDLENAME', 'MIDDLE_NAME']),
-          lastName: getColIndex(['LASTNAME', 'SURNAME', 'LAST_NAME']),
-          extName: getColIndex(['EXTENSIONNAME', 'EXT_NAME']),
-          sex: getColIndex(['SEX', 'GENDER']),
-          mother: getColIndex(['MOTHERMAIDENNAME'])
-        };
-
-        if (colIndices.rsbsa === null || colIndices.firstName === null || colIndices.lastName === null) {
-          Swal.fire("Error", "File missing required columns (RSBSA Number, First Name, Last Name)", "error");
-          setProcessing(false);
-          return;
-        }
-
-        const rows = parsedData.slice(1).map((row, index) => {
-          const originalRowData = {};
-          headers.forEach((header, i) => {
-            originalRowData[header] = row[i] || "";
-          });
-
-          return {
-            id: index + 1,
-            originalData: originalRowData,
-            RSBSA_NO: row[colIndices.rsbsa] || "",
-            FIRSTNAME: row[colIndices.firstName] || "",
-            MIDDLENAME: colIndices.middleName !== null ? row[colIndices.middleName] || "" : "",
-            LASTNAME: row[colIndices.lastName] || "",
-            EXTENSIONNAME: colIndices.extName !== null ? row[colIndices.extName] || "" : "",
-            SEX: colIndices.sex !== null ? row[colIndices.sex] || "" : "",
-            MOTHERMAIDENNAME: colIndices.mother !== null ? row[colIndices.mother] || "" : ""
-          };
-        });
-
-        setOriginalData(rows);
-        setFileSize(file.size);
-        await matchDataWithAPI(rows);
+        const rows = await processFile(
+          file,
+          setProcessing,
+          setFileName,
+          setExportFileName,
+          setPage,
+          setSaveDisabled,
+          setMatchedData,
+          setUnmatchedData,
+          setOriginalHeaders,
+          setOriginalData,
+          setFileSize
+        );
+        await matchDataWithAPI(rows, setMatching, setMatchedData, setUnmatchedData);
       } catch (error) {
-        console.error("Error processing file:", error);
-        Swal.fire("Error", "Failed to process the file", "error");
-      } finally {
-        setProcessing(false);
+        console.error("File processing error:", error);
       }
     };
-    reader.readAsBinaryString(file);
-  };
 
-  const getFilteredData = () => {
+  const filteredData = useMemo(() => {
+    let result = [...fileState.matchedData, ...fileState.unmatchedData];
+    
     switch (displayMode) {
       case 'MATCHED':
-        return matchedData;
+        result = fileState.matchedData;
+        break;
       case 'UNMATCHED':
-        return unmatchedData;
-      default:
-        return [...matchedData, ...unmatchedData];
+        result = fileState.unmatchedData;
+        break;
     }
-  };
 
-  const filteredData = getFilteredData();
+    return result.filter(row => {
+      const matchesRSBSA = filters.rsbsaNo === '' || 
+        (row.RSBSA_NO && row.RSBSA_NO.toString().toLowerCase().includes(filters.rsbsaNo.toLowerCase())) ||
+        (row.originalData?.RSBSA_NO && row.originalData.RSBSA_NO.toString().toLowerCase().includes(filters.rsbsaNo.toLowerCase()));
+
+      const fullName = `${row.FIRSTNAME || row.originalData?.FIRSTNAME || ''} ${row.LASTNAME || row.originalData?.LASTNAME || ''}`.toLowerCase();
+      const matchesName = filters.name === '' || 
+        fullName.includes(filters.name.toLowerCase());
+
+      return matchesRSBSA && matchesName;
+    });
+  }, [
+    fileState.matchedData, 
+    fileState.unmatchedData, 
+    displayMode, 
+    filters
+  ]);
+
   const currentPageData = filteredData.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
@@ -158,7 +173,7 @@ const DataProcessingTool = () => {
   const handleDisplayModeChange = (event, newMode) => {
     if (newMode !== null) {
       setDisplayMode(newMode);
-      setPage(0); // Reset to first page when changing filters
+      setPage(0);
     }
   };
 
@@ -168,7 +183,9 @@ const DataProcessingTool = () => {
       const batchSize = 10;
       let totalMatched = 0;
       let totalUnmatched = 0;
-
+      let matchedResults = [];
+      let unmatchedResults = [];
+  
       for (let i = 0; i < rows.length; i += batchSize) {
         const batch = rows.slice(i, i + batchSize);
         
@@ -184,11 +201,11 @@ const DataProcessingTool = () => {
                 "SEX": row.SEX || "",
                 "MOTHERMAIDENNAME": row.MOTHERMAIDENNAME || ""
               };
-
+  
               const response = await dataMatchingAPI.get("/api/match/rsbsa", {
                 headers: headers
               });
-
+  
               if (
                 response.data.success &&
                 response.data.data &&
@@ -206,14 +223,17 @@ const DataProcessingTool = () => {
                   matchStatus: "MATCHED",
                   matchDetails: {       
                     rsbsa_no: rsbsaNo
-                  }
+                  },
+                  showDetails: false // Add this to control dropdown visibility
                 };
               } else {
                 totalUnmatched++;
                 return {
                   ...row,
                   matchStatus: "UNMATCHED",
-                  remarks: response.data.message || "No matching record found"
+                  remarks: response.data.message || "No matching record found",
+                  unmatchedRecords: response.data.unmatchedRecords || [], // Add unmatched fields from API
+                  showDetails: true // Show details by default for unmatched
                 };
               }              
             } catch (error) {
@@ -224,21 +244,27 @@ const DataProcessingTool = () => {
                 matchStatus: "ERROR",
                 remarks: error.response?.data?.message || 
                          error.message || 
-                         "API request failed"
+                         "API request failed",
+                unmatchedRecords: error.response?.data?.unmatchedRecords || [],
+                showDetails: true // Show details for errors
               };
             }
           })
         );
-
+  
         const matched = results.filter(r => r.matchStatus === "MATCHED");
         const unmatched = results.filter(r => r.matchStatus !== "MATCHED");
         
-        setMatchedData(prev => [...prev, ...matched]);
-        setUnmatchedData(prev => [...prev, ...unmatched]);
-
+        matchedResults = [...matchedResults, ...matched];
+        unmatchedResults = [...unmatchedResults, ...unmatched];
+        
+  
+        setMatchedData(matchedResults);
+        setUnmatchedData(unmatchedResults);
+  
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-
+  
       Swal.fire({
         title: 'Matching Complete',
         html: `
@@ -248,7 +274,7 @@ const DataProcessingTool = () => {
           </div>
         `,
         icon: 'success',
-        timer: 3000
+        timer: 2000
       });
     } catch (error) {
       console.error("Batch matching error:", error);
@@ -264,20 +290,6 @@ const DataProcessingTool = () => {
       const { validRows, invalidRows } = validateData(rows);
       setValidData(validRows);
       setInvalidData(invalidRows);
-
-      Swal.fire({
-        title: 'Validation Complete',
-        html: `
-          <div>
-            <p>Valid rows: ${validRows.length}</p>
-            <p>Invalid rows: ${invalidRows.length}</p>
-            ${invalidRows.length > 0 ? 
-              '<p class="text-red-500">Check remarks for validation issues</p>' : 
-              ''}
-          </div>
-        `,
-        icon: 'success'
-      });
     } catch (error) {
       console.error("Validation error:", error);
       Swal.fire("Error", "Failed to validate data", "error");
@@ -287,8 +299,7 @@ const DataProcessingTool = () => {
   };
 
   const handleOpenValidationDialog = () => {
-    // Prepare data for validation - only matched records
-    const dataToValidate = matchedData.map(item => ({
+    const dataToValidate = fileState.matchedData.map(item => ({
       ...item.originalData,
       originalIndex: item.id
     }));
@@ -305,26 +316,64 @@ const DataProcessingTool = () => {
     setActiveTab(newValue);
   };
 
-  const exportValidatedData = async (type) => {
-    try {
-      const dataToExport = type === 'VALID' ? validData : invalidData;
-      if (dataToExport.length === 0) {
-        Swal.fire("Info", `No ${type.toLowerCase()} data to export`, "info");
-        return;
-      }
+  const handleExport = (type) => {
+    exportValidatedData(
+      type === 'VALID' ? validData : invalidData,
+      type,
+      exportFileName
+    );
+  };
 
-      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      
-      const filename = `${type.toLowerCase()}_${exportFileName}.xlsx`;
-      XLSX.writeFile(workbook, filename);
-      
-      Swal.fire("Success", `${dataToExport.length} ${type.toLowerCase()} records exported`, "success");
-    } catch (error) {
-      console.error('Export error:', error);
-      Swal.fire('Error', 'Failed to export data', 'error');
+
+  const handleOpenEmailDialog = () => {
+    setEmailDialogOpen(true);
+  };
+
+  const handleCloseEmailDialog = () => {
+    setEmailDialogOpen(false);
+  };
+
+  const handleEmailInputChange = (e) => {
+    const { name, value, checked } = e.target;
+    setEmailData(prev => ({
+      ...prev,
+      [name]: name === 'sendValid' || name === 'sendInvalid' ? checked : value
+    }));
+  };
+
+  const headerDisplayMap = {
+    first_name: "FIRSTNAME",
+    middle_name: "MIDDLENAME",
+    surname: "LASTNAME",
+    ext_name: "EXTENSIONNAME",
+    mother_maiden_name: "MOTHERMAIDENNAME",
+    sex: "SEX",
+    birthday: "BIRTHDATE"
+  };  
+
+  const handleSendEmail = async () => {
+    const success = await sendValidationResults(
+      emailData,
+      validData,
+      invalidData,
+      exportFileName
+    );
+    if (success) {
+      handleCloseEmailDialog();
+      handleCloseValidationDialog();
     }
+  };
+
+  const handleClearData = () => {
+    clearFileData();
+    setFileName("");
+    setFileSize(0);
+    setOpenRows({});
+    setValidData([]);
+    setInvalidData([]);
+    setExportFileName("");
+    fileInputRef.current.value = "";
+    setSaveDisabled(true);
   };
 
   return (
@@ -341,7 +390,7 @@ const DataProcessingTool = () => {
                 <>
                   <LinearProgress style={{ width: '100%', marginTop: '1rem' }} />
                   <Typography variant="caption">
-                    {matchedData.length + unmatchedData.length} records processed
+                    {fileState.matchedData.length + fileState.unmatchedData.length} records processed
                   </Typography>
                 </>
               )}
@@ -350,7 +399,7 @@ const DataProcessingTool = () => {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <CompareArrows style={{ fontSize: "4rem", color: "#1976d2", marginBottom: '1rem' }} />
               <Typography variant="h5" gutterBottom>
-                Data Processing Tool
+                Process Tool
               </Typography>
               <Typography variant="body2" color="textSecondary" style={{ marginBottom: '1.0rem' }}>
                 Upload file to match against RSBSA database and validate for duplicates
@@ -358,7 +407,7 @@ const DataProcessingTool = () => {
               <input 
                 type="file" 
                 ref={fileInputRef} 
-                onChange={(e) => e.target.files[0] && processFile(e.target.files[0])} 
+                onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} 
                 accept=".xlsx,.csv" 
                 style={{ display: 'none' }} 
               />
@@ -371,24 +420,16 @@ const DataProcessingTool = () => {
               >
                 Select File
               </Button>
-              {fileName && (
+              {fileState.fileName && (
                 <div style={{ marginTop: '1rem' }}>
                   <Typography variant="body2">
-                    Selected: {fileName} ({Math.round(fileSize / 1024)} KB)
+                    Selected: {fileState.fileName} ({Math.round(fileState.fileSize / 1024)} KB)
                   </Typography>
                   <Button
                     variant="outlined"
                     color="error"
                     startIcon={<Delete />}
-                    onClick={() => {
-                      setFileName("");
-                      setFileSize(0);
-                      setMatchedData([]);
-                      setUnmatchedData([]);
-                      setExportFileName("");
-                      fileInputRef.current.value = "";
-                      setSaveDisabled(true);
-                    }}
+                    onClick={handleClearData}
                     style={{ marginTop: '0.5rem' }}
                   >
                     Remove File
@@ -400,7 +441,7 @@ const DataProcessingTool = () => {
         </CardContent>
       </Card>
 
-      {(matchedData.length > 0 || unmatchedData.length > 0) && (
+      {(fileState.matchedData.length > 0 || fileState.unmatchedData.length > 0) && (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 2 }}>
             <Box>
@@ -417,16 +458,16 @@ const DataProcessingTool = () => {
                 </ToggleButton>
                 <ToggleButton value="MATCHED" aria-label="show matched">
                   <CheckCircle fontSize="small" sx={{ mr: 0.5 }} />
-                  <Typography variant="caption">{matchedData.length}</Typography>
+                  <Typography variant="caption">{fileState.matchedData.length}</Typography>
                 </ToggleButton>
                 <ToggleButton value="UNMATCHED" aria-label="show unmatched">
                   <ErrorOutline fontSize="small" sx={{ mr: 0.5 }} />
-                  <Typography variant="caption">{unmatchedData.length}</Typography>
+                  <Typography variant="caption">{fileState.unmatchedData.length}</Typography>
                 </ToggleButton>
               </ToggleButtonGroup>
               
               <Chip 
-                label={`Total: ${matchedData.length + unmatchedData.length}`} 
+                label={`Total: ${filteredData.length}`} 
                 color="default" 
                 variant="outlined"
                 size="small"
@@ -439,12 +480,54 @@ const DataProcessingTool = () => {
                 color="primary"
                 startIcon={<DataArray />}
                 onClick={handleOpenValidationDialog}
-                disabled={matchedData.length === 0}
+                disabled={fileState.matchedData.length === 0}
                 sx={{ mr: 1 }}
               >
                 Validate Matches
               </Button>
             </Box>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+            <TextField
+              label="Search RSBSA No"
+              variant="outlined"
+              size="small"
+              value={filters.rsbsaNo}
+              onChange={handleFilterChange('rsbsaNo')}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ minWidth: 200 }}
+            />
+            
+            <TextField
+              label="Search Name"
+              variant="outlined"
+              size="small"
+              value={filters.name}
+              onChange={handleFilterChange('name')}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ minWidth: 200 }}
+            />
+            <Button
+              variant="outlined"
+              startIcon={<Clear />}
+              onClick={clearFilters}
+              size="small"
+              sx={{ height: 40 }}
+            >
+              Clear Filters
+            </Button>
           </Box>
 
           <TableContainer component={Paper} sx={{ mb: 3 }}>
@@ -466,12 +549,14 @@ const DataProcessingTool = () => {
                         backgroundColor: row.matchStatus === "MATCHED" ? 'rgba(76, 175, 80, 0.08)' : 'rgba(244, 67, 54, 0.08)' 
                       }}>
                         <TableCell>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleToggleRow(row.id)}
-                          >
-                            {openRows[row.id] ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
-                          </IconButton>
+                          {row.matchStatus !== "MATCHED" && (
+                            <IconButton
+                              size="small"
+                              onClick={() => handleToggleRow(row.id)}
+                            >
+                              {openRows[row.id] ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+                            </IconButton>
+                          )}
                         </TableCell>
                         <TableCell>
                           {row.matchStatus === "MATCHED" ? (
@@ -502,36 +587,179 @@ const DataProcessingTool = () => {
                             : row.remarks}
                         </TableCell>
                       </TableRow>
-                      <TableRow>
-                        <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
-                          <Collapse in={openRows[row.id]} timeout="auto" unmountOnExit>
-                            <Box sx={{ margin: 1 }}>
-                              <Typography variant="subtitle2">Full Record</Typography>
-                              <pre style={{ 
-                                fontFamily: 'monospace',
-                                backgroundColor: '#f5f5f5',
-                                padding: '10px',
-                                borderRadius: '4px',
-                                overflowX: 'auto'
-                              }}>
-                                {JSON.stringify({
-                                  ...row.originalData,
-                                  matchStatus: row.matchStatus,
-                                  matchDetails: row.matchDetails,
-                                  remarks: row.remarks
-                                }, null, 2)}
-                              </pre>
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
+                      {row.matchStatus !== "MATCHED" && (
+                        <TableRow>
+                          <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
+                            <Collapse in={openRows[row.id]} timeout="auto" unmountOnExit>
+                              <Box sx={{ margin: 2, maxWidth: "100%" }}>
+                                <Typography variant="h6" gutterBottom component="div" sx={{ fontWeight: "bold", color: "#333" }}>
+                                  Record Details
+                                </Typography>
+                                
+                                <Paper 
+                                  elevation={1} 
+                                  sx={{ 
+                                    p: 2, 
+                                    mb: 2, 
+                                    backgroundColor: row.matchStatus === "MATCHED" ? "#e8f5e9" : "#ffebee",
+                                    borderLeft: row.matchStatus === "MATCHED" ? "5px solid #4caf50" : "5px solid #f44336"
+                                  }}
+                                >
+                                  <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                                    {row.matchStatus === "MATCHED" ? (
+                                      <CheckCircleIcon sx={{ color: "#4caf50", mr: 1 }} />
+                                    ) : (
+                                      <ErrorIcon sx={{ color: "#f44336", mr: 1 }} />
+                                    )}
+                                    <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+                                      Status: {row.matchStatus === "ERROR" ? "Unmatched" : row.matchStatus}
+                                    </Typography>
+                                  </Box>
+                                  <Typography variant="body2">{row.remarks}</Typography>
+                                </Paper>
+                                
+                                {row.unmatchedRecords && row.unmatchedRecords.length > 0 && (
+                                  <Box sx={{ mb: 2 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: "bold", mb: 1 }}>Matching Issues Found</Typography>
+                                    
+                                    {row.unmatchedRecords.map((record, index) => (
+                                      <Paper key={index} elevation={1} sx={{ p: 2, mb: 2, backgroundColor: "#fff8e1", borderLeft: "5px solid #ffa000" }}>
+                                        <Typography variant="subtitle2" sx={{ fontWeight: "bold", mb: 1 }}>
+                                          {record.reason}
+                                        </Typography>
+                                        
+                                        <Grid container spacing={2}>
+                                          <Grid item xs={12} md={6}>
+                                            <Typography variant="caption" sx={{ fontWeight: "bold", color: "#555" }}>Record Information</Typography>
+                                            <List dense>
+                                              {record.recordData.rsbsa_no && 
+                                                <ListItem>
+                                                  <ListItemText primary="RSBSA Number" secondary={record.recordData.rsbsa_no} />
+                                                </ListItem>
+                                              }
+                                              {record.recordData.first_name && 
+                                                <ListItem>
+                                                  <ListItemText primary="First Name" secondary={record.recordData.first_name} />
+                                                </ListItem>
+                                              }
+                                              {record.recordData.middle_name && 
+                                                <ListItem>
+                                                  <ListItemText primary="Middle Name" secondary={record.recordData.middle_name} />
+                                                </ListItem>
+                                              }
+                                              {record.recordData.surname && 
+                                                <ListItem>
+                                                  <ListItemText primary="Last Name" secondary={record.recordData.surname} />
+                                                </ListItem>
+                                              }
+                                              {record.recordData.ext_name && 
+                                                <ListItem>
+                                                  <ListItemText primary="Extension" secondary={record.recordData.ext_name} />
+                                                </ListItem>
+                                              }
+                                              {record.recordData.sex && 
+                                                <ListItem>
+                                                  <ListItemText primary="Sex" secondary={record.recordData.sex} />
+                                                </ListItem>
+                                              }
+                                              {record.recordData.mother_maiden_name && 
+                                                <ListItem>
+                                                  <ListItemText primary="Mother's Maiden Name" secondary={record.recordData.mother_maiden_name} />
+                                                </ListItem>
+                                              }
+                                            </List>
+                                          </Grid>
+                                          
+                                          <Grid item xs={12} md={6}>
+                                            <Typography variant="caption" sx={{ fontWeight: "bold", color: "#555" }}>Mismatched Fields</Typography>
+                                            {record.unmatchedFields && record.unmatchedFields.length > 0 ? (
+                                              <TableContainer component={Paper} sx={{ mt: 1 }}>
+                                                <Table size="small">
+                                                  <TableHead>
+                                                    <TableRow>
+                                                      <TableCell>Field</TableCell>
+                                                      <TableCell>Your Input</TableCell>
+                                                      <TableCell>On Records</TableCell>
+                                                    </TableRow>
+                                                  </TableHead>
+                                                  <TableBody>
+                                                    {record.unmatchedFields.map((field, idx) => (
+                                                      <TableRow key={idx} sx={{ backgroundColor: "#fff3e0" }}>
+                                                        <TableCell sx={{ fontWeight: "medium" }}>
+                                                          {headerDisplayMap[field.field] || field.field}
+                                                        </TableCell>
+                                                        <TableCell>{field.input || "(empty)"}</TableCell>
+                                                        <TableCell>{field.db || "(empty)"}</TableCell>
+                                                      </TableRow>
+                                                    ))}
+                                                  </TableBody>
+                                                </Table>
+                                              </TableContainer>
+                                            ) : (
+                                              <Typography variant="body2" sx={{ mt: 1, fontStyle: "italic" }}>
+                                                No specific field mismatches detected.
+                                              </Typography>
+                                            )}
+                                          </Grid>
+                                        </Grid>
+
+                                        {record.potentialMatch && (
+                                          <Box sx={{ mt: 2, p: 1, backgroundColor: "#e3f2fd", borderRadius: 1 }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: "bold" }}>
+                                              <InfoIcon sx={{ fontSize: 16, mr: 0.5, verticalAlign: "text-bottom" }} />
+                                              Potential Match Found
+                                            </Typography>
+                                            <List dense>
+                                              {record.potentialMatch.rsbsa_no && 
+                                                <ListItem>
+                                                  <ListItemText primary="RSBSA Number" secondary={record.potentialMatch.rsbsa_no} />
+                                                </ListItem>
+                                              }
+                                              <ListItem>
+                                                <ListItemText 
+                                                  primary="Name" 
+                                                  secondary={`${record.potentialMatch.first_name || ""} ${record.potentialMatch.middle_name || ""} ${record.potentialMatch.surname || ""} ${record.potentialMatch.ext_name || ""}`.trim()} 
+                                                />
+                                              </ListItem>
+                                            </List>
+                                          </Box>
+                                        )}
+                                      </Paper>
+                                    ))}
+                                  </Box>
+                                )}
+                                
+                                {row.matchStatus === "MATCHED" && row.matchDetails && (
+                                  <Box sx={{ mb: 2 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: "bold", mb: 1 }}>Matched Record Details</Typography>
+                                    <Paper elevation={1} sx={{ p: 2 }}>
+                                      <Grid container spacing={2}>
+                                        {Object.entries(row.matchDetails).map(([key, value]) => (
+                                          <Grid item xs={12} sm={6} md={4} key={key}>
+                                            <Typography variant="caption" sx={{ color: "#555" }}>{key}</Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: "medium" }}>
+                                              {value || "(empty)"}
+                                            </Typography>
+                                          </Grid>
+                                        ))}
+                                      </Grid>
+                                    </Paper>
+                                  </Box>
+                                )}
+                              </Box>
+                            </Collapse>
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </React.Fragment>
                   ))
                 ) : (
                   <TableRow>
                     <TableCell colSpan={5} align="center">
                       <Typography variant="body2" color="textSecondary">
-                        No {displayMode.toLowerCase()} records found
+                        {Object.values(filters).some(f => f !== '') 
+                          ? "No records match your filters" 
+                          : `No ${displayMode.toLowerCase()} records found`}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -636,14 +864,22 @@ const DataProcessingTool = () => {
                 </TableContainer>
               )}
 
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<Email />}
+                  onClick={handleOpenEmailDialog}
+                  disabled={validData.length === 0 && invalidData.length === 0}
+                >
+                  Email Results
+                </Button>
                 <Button
                   variant="contained"
                   color="success"
                   startIcon={<SaveAlt />}
                   onClick={() => exportValidatedData('VALID')}
                   disabled={validData.length === 0}
-                  sx={{ mr: 1 }}
                 >
                   Export Valid
                 </Button>
@@ -662,6 +898,74 @@ const DataProcessingTool = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseValidationDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={emailDialogOpen} onClose={handleCloseEmailDialog} fullWidth maxWidth="sm">
+        <DialogTitle>Email Validation Results</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <TextField
+              label="Recipient Email"
+              name="recipient"
+              value={emailData.recipient}
+              onChange={handleEmailInputChange}
+              fullWidth
+              required
+              type="email"
+            />
+            <TextField
+              label="Subject"
+              name="subject"
+              value={emailData.subject}
+              onChange={handleEmailInputChange}
+              fullWidth
+            />
+            <TextField
+              label="Message"
+              name="message"
+              value={emailData.message}
+              onChange={handleEmailInputChange}
+              fullWidth
+              multiline
+              rows={4}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={emailData.sendValid}
+                  onChange={handleEmailInputChange}
+                  name="sendValid"
+                  color="primary"
+                />
+              }
+              label={`Include valid data (${validData.length} records)`}
+              disabled={validData.length === 0}
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={emailData.sendInvalid}
+                  onChange={handleEmailInputChange}
+                  name="sendInvalid"
+                  color="primary"
+                />
+              }
+              label={`Include invalid data (${invalidData.length} records)`}
+              disabled={invalidData.length === 0}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseEmailDialog}>Cancel</Button>
+          <Button 
+            onClick={sendValidationResults} 
+            variant="contained" 
+            color="primary"
+            startIcon={<Send />}
+            disabled={!emailData.recipient || (!emailData.sendValid && !emailData.sendInvalid)}
+          >
+            Send Email
+          </Button>
         </DialogActions>
       </Dialog>
     </div>

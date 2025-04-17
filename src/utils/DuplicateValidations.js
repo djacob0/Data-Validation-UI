@@ -48,15 +48,21 @@ const validationRules = [
   {
     name: 'systemNumberFormat',
     fields: ['RSBSASYSTEMGENERATEDNUMBER'],
-    validate: (row, field) => row[field] && !/^\d{2}-\d{2}-\d{2}-\d{3}-\d{6}$/.test(row[field]),
-    message: () => 'INVALID SYSTEM NUMBER FORMAT'
+    validate: (row, field) => row[field] && !/^\d{2}-\d{3}-\d{2}-\d{3}-\d{6}$/.test(row[field]),
+    message: () => 'INVALID RSBSA NUMBER'
   },
   {
     name: 'gender',
     fields: ['SEX'],
     validate: (row, field) => row[field] && !['MALE', 'FEMALE'].includes(row[field].toUpperCase()),
     message: () => 'INVALID GENDER'
-  },
+  },  
+  // {
+  //   name: 'extensionNameValidList',
+  //   fields: ['EXTENSIONNAME'],
+  //   validate: (row, field) => row[field] && !['JR', 'SR', 'II', 'III', 'IV', 'V'].includes(row[field].toUpperCase()),
+  //   message: () => 'INVALID EXTENSIONNAME (NOT ALLOWED VALUE)'
+  // },  
   {
     name: 'addressFields',
     fields: ['STREETNO_PUROKNO', 'BARANGAY', 'CITYMUNICIPALITY', 'PROVINCE', 'REGION'],
