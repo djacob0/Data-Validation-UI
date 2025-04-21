@@ -2,56 +2,181 @@ import * as XLSX from "xlsx";
 import api from "../connection/api";
 import Swal from "sweetalert2";
 
-export const exportValidatedData = (dataToExport, type, exportFileName) => {
+export const exportValidatedData = (dataToExport, type = 'data', exportFileName, cleanedData = [], invalidData = []) => {
   try {
-    if (dataToExport.length === 0) {
-      return;
+    const cleanedMap = new Map();
+    cleanedData.forEach(item => {
+      const rsbsaNumber = (
+        item.RSBSASYSTEMGENERATEDNUMBER || 
+        item.rsbsa_no || 
+        item.rsbsaNumber || 
+        item.RSBSA_NO
+      )?.toString().trim();
+      
+      if (rsbsaNumber) {
+        const normalizedRecord = {
+          RSBSASYSTEMGENERATEDNUMBER: rsbsaNumber,
+          FIRSTNAME: item.FIRSTNAME,
+          MIDDLENAME: item.MIDDLENAME,
+          LASTNAME: item.LASTNAME,
+          EXTENSIONNAME: item.EXTENSIONNAME,
+          SEX: item.SEX,
+          MOTHERMAIDENNAME: item.MOTHERMAIDENNAME,
+          STREETNO_PUROKNO: item.STREETNO_PUROKNO,
+          CITYMUNICIPALITY: item.CITYMUNICIPALITY || item.CITYMUNICIPALITY,
+          PROVINCE: item.PROVINCE,
+          DISTRICT: item.DISTRICT,
+          REGION: item.REGION,
+          MOBILENO: item.MOBILENO,
+          PLACEOFBIRTH: item.PLACEOFBIRTH,
+          ...item
+        };
+
+        const { status, ...cleanRecord } = normalizedRecord;
+        cleanedMap.set(rsbsaNumber, cleanRecord);
+      }
+    });
+
+    let exportData;
+    if (type.toLowerCase() === 'invalid' && invalidData.length > 0) {
+      exportData = invalidData.map(item => {
+        const originalData = item.originalData || item;
+        const rsbsaKey = originalData.RSBSASYSTEMGENERATEDNUMBER?.toString().trim();
+        const cleanedRecord = rsbsaKey ? cleanedMap.get(rsbsaKey) : null;
+        
+        const { status, originalIndex, ...cleanOriginal } = originalData;
+        
+        return {
+          ...cleanOriginal,
+          ...(cleanedRecord || {}),
+        };
+      });
+    } else {
+      exportData = dataToExport.map(item => {
+        const originalData = item.originalData || item;
+        const rsbsaKey = originalData.RSBSASYSTEMGENERATEDNUMBER?.toString().trim();
+        const cleanedRecord = rsbsaKey ? cleanedMap.get(rsbsaKey) : null;
+        
+        const { status, originalIndex, ...cleanOriginal } = originalData;
+        
+        return {
+          ...cleanOriginal,
+          ...(cleanedRecord || {}),
+        };
+      });
     }
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+    XLSX.utils.book_append_sheet(workbook, worksheet, type);
     
-    const filename = `${type.toLowerCase()}_${exportFileName}.xlsx`;
+    const filename = `${exportFileName || 'export'}_${type.toLowerCase()}_${new Date().toISOString().slice(0,10)}.xlsx`;
     XLSX.writeFile(workbook, filename);
+
   } catch (error) {
-    console.error('Export error:', error);
+    console.error('Export failed:', error);
   }
 };
 
-export const sendValidationResults = async (emailData, validData, invalidData, exportFileName) => {
+export const sendValidationResults = async (
+  emailData, 
+  validData, 
+  invalidData, 
+  exportFileName, 
+  cleanedData = []
+) => {
   try {
     const formData = new FormData();
-    const baseName = exportFileName || 'validation_results';
-    
+    const currentDate = new Date().toISOString().slice(0, 10);
+
+    const cleanedMap = new Map();
+    cleanedData.forEach(item => {
+      const key = (
+        item.RSBSASYSTEMGENERATEDNUMBER || 
+        item.rsbsa_no || 
+        item.RSBSA_NO
+      )?.toString().trim();
+      
+      if (key) {
+        const { status, ...cleanItem } = item;
+        cleanedMap.set(key, cleanItem);
+      }
+    });
+
     if (emailData.sendValid && validData.length > 0) {
-      const validWorksheet = XLSX.utils.json_to_sheet(validData);
+      const exportValidData = validData.map(item => {
+        const original = item.originalData || item;
+        const key = original.RSBSASYSTEMGENERATEDNUMBER?.toString().trim();
+        const cleaned = key ? cleanedMap.get(key) : null;
+        
+        const { status, originalIndex, ...cleanOriginal } = original;
+        
+        return {
+          ...cleanOriginal,
+          ...(cleaned || {}),
+          IsInvalid: false,
+          ValidationRemarks: ''
+        };
+      });
+
+      const validWorksheet = XLSX.utils.json_to_sheet(exportValidData);
       const validWorkbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(validWorkbook, validWorksheet, "Valid Data");
-      const validFile = XLSX.write(validWorkbook, { bookType: 'xlsx', type: 'array' });
-      formData.append('validFile', new Blob([validFile], { type: 'application/octet-stream' }), `${baseName}_valid.xlsx`);
-      formData.append('validFileName', `${baseName}_valid.xlsx`);
+      const validFile = XLSX.write(validWorkbook, { 
+        bookType: 'xlsx', 
+        type: 'array' 
+      });
+      
+      formData.append(
+        'validFile', 
+        new Blob([validFile], { type: 'application/octet-stream' }), 
+        `${exportFileName}_valid_${currentDate}.xlsx`
+      );
     }
 
     if (emailData.sendInvalid && invalidData.length > 0) {
-      const invalidWorksheet = XLSX.utils.json_to_sheet(invalidData);
+      const exportInvalidData = invalidData.map(item => {
+        const original = item.originalData || item;
+        const key = original.RSBSASYSTEMGENERATEDNUMBER?.toString().trim();
+        const cleaned = key ? cleanedMap.get(key) : null;
+        
+        const { status, originalIndex, ...cleanOriginal } = original;
+        
+        return {
+          ...cleanOriginal,
+          ...(cleaned || {}),
+          IsInvalid: true,
+          ValidationRemarks: item.Remarks || 'Invalid record'
+        };
+      });
+
+      const invalidWorksheet = XLSX.utils.json_to_sheet(exportInvalidData);
       const invalidWorkbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(invalidWorkbook, invalidWorksheet, "Invalid Data");
-      const invalidFile = XLSX.write(invalidWorkbook, { bookType: 'xlsx', type: 'array' });
-      formData.append('invalidFile', new Blob([invalidFile], { type: 'application/octet-stream' }), `${baseName}_invalid.xlsx`);
-      formData.append('invalidFileName', `${baseName}_invalid.xlsx`);
+      const invalidFile = XLSX.write(invalidWorkbook, { 
+        bookType: 'xlsx', 
+        type: 'array' 
+      });
+      
+      formData.append(
+        'invalidFile', 
+        new Blob([invalidFile], { type: 'application/octet-stream' }), 
+        `${exportFileName}_invalid_${currentDate}.xlsx`
+      );
+    }
+
+    if (!formData.has('validFile') && !formData.has('invalidFile')) {
+      throw new Error("No files selected for sending");
     }
 
     formData.append('recipient', emailData.recipient);
-    formData.append('subject', emailData.subject);
-    formData.append('message', emailData.message);
+    formData.append('subject', emailData.subject || `${exportFileName} - ${currentDate}`);
+    formData.append('message', emailData.message || 'Please find attached validation results.');
 
-    Swal.fire({
+    const swal = Swal.fire({
       title: 'Sending email...',
       allowOutsideClick: false,
-      didOpen: () => {
-        Swal.showLoading();
-      }
+      didOpen: () => Swal.showLoading()
     });
 
     const response = await api.post('/api/email/send-validation-results', formData, {
@@ -61,29 +186,28 @@ export const sendValidationResults = async (emailData, validData, invalidData, e
       }
     });
 
-    Swal.close();
+    await swal.close();
+    
     if (response.data.success) {
-      Swal.fire({
+      await Swal.fire({
         title: 'Success!',
         text: 'Email sent successfully',
         icon: 'success',
-        timer: 2000,
-        showConfirmButton: false
+        timer: 2000
       });
       localStorage.setItem('userEmail', emailData.recipient);
       return true;
-    } else {
-      throw new Error(response.data.message || 'Failed to send email');
     }
-  } catch (error) {
-    Swal.close();
-    console.error('Email sending error:', error);
     
-    let errorMessage = 'Failed to send email';
-    if (error.code === 'ERR_NETWORK') {
+    throw new Error(response.data.message || 'Failed to send email');
+  } catch (error) {
+    console.error('Email sending error:', error);
+    let errorMessage = error.message || 'Failed to send email';
+    
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.code === 'ERR_NETWORK') {
       errorMessage = 'Network error - please check your connection';
-    } else if (error.response) {
-      errorMessage = error.response.data.message || errorMessage;
     }
     
     Swal.fire('Error', errorMessage, 'error');

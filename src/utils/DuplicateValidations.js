@@ -8,7 +8,7 @@ export const cleanText = (text) => {
     .trim();
 };
 
-const validationRules = [
+export const validationRules = [
   {
     name: 'requiredFields',
     fields: ['FIRSTNAME', 'LASTNAME', 'RSBSASYSTEMGENERATEDNUMBER', 'SEX', 'BIRTHDATE'],

@@ -1,26 +1,21 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import * as XLSX from "xlsx";
 import {
-  Button, Card, CardContent, Typography, LinearProgress, Dialog, DialogTitle, DialogContent,
-  DialogActions, CircularProgress, Chip, Box, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Paper, Collapse, IconButton, TablePagination, Tabs, Tab,
-  ToggleButton, ToggleButtonGroup, TextField, FormControlLabel, Checkbox, InputAdornment,
-  Grid, List, ListItem, ListItemText
+  Button, Card, CardContent, Typography, LinearProgress, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Chip, Box, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, Paper, Collapse, IconButton, TablePagination, Tabs, Tab, ToggleButton, ToggleButtonGroup, TextField, FormControlLabel, Checkbox, InputAdornment,
+  Grid, List, ListItem, ListItemText,
 } from "@mui/material";
 
 import {
   CloudUpload, Delete, CheckCircle, SaveAlt, ErrorOutline, KeyboardArrowDown,
-  KeyboardArrowUp, CompareArrows, DataArray, Email, Send, Search, FilterList, Clear,
-  CheckCircle as CheckCircleIcon, Edit as EditIcon, Error as ErrorIcon, Info as InfoIcon
+  KeyboardArrowUp, CompareArrows, DataArray, Email, Send, Search, Clear, CheckCircle as CheckCircleIcon, Edit as EditIcon, Error as ErrorIcon, Info as InfoIcon, CleaningServices
 } from '@mui/icons-material';
 import Swal from "sweetalert2";
 import dataMatchingAPI from "../connection/dataMatchingAPI"
 import api from "../connection/api";
 import { useFileContext } from '../context/FileContext';
-import { standardizeHeader, validateData } from "../utils/DuplicateValidations";
+import { standardizeHeader, validateData, validationRules  } from "../utils/DuplicateValidations";
 import { processFile, matchDataWithAPI } from "../utils/FileProcessing";
 import { exportValidatedData, sendValidationResults } from "../utils/ExportUtils";
-
 
 const DataProcessingTool = () => {
   const fileInputRef = useRef(null);
@@ -37,6 +32,9 @@ const DataProcessingTool = () => {
   } = useFileContext();
   
   const [processing, setProcessing] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanedData, setCleanedData] = useState([]);
+  const [isCleaningComplete, setIsCleaningComplete] = useState(false);
   const [matching, setMatching] = useState(false);
   const [displayMode, setDisplayMode] = useState('ALL');
   const [openRows, setOpenRows] = useState({});
@@ -114,57 +112,71 @@ const DataProcessingTool = () => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-      const handleFileUpload = async (file) => {
-      try {
-        const rows = await processFile(
-          file,
-          setProcessing,
-          setFileName,
-          setExportFileName,
-          setPage,
-          setSaveDisabled,
-          setMatchedData,
-          setUnmatchedData,
-          setOriginalHeaders,
-          setOriginalData,
-          setFileSize
-        );
-        await matchDataWithAPI(rows, setMatching, setMatchedData, setUnmatchedData);
-      } catch (error) {
-        console.error("File processing error:", error);
-      }
-    };
+    const handleFileUpload = async (file) => {
+    try {
+      const rows = await processFile(
+        file,
+        setProcessing,
+        setFileName,
+        setExportFileName,
+        setPage,
+        setSaveDisabled,
+        setMatchedData,
+        setUnmatchedData,
+        setOriginalHeaders,
+        setOriginalData,
+        setFileSize
+      );
+      await matchDataWithAPI(rows, setMatching, setMatchedData, setUnmatchedData);
+    } catch (error) {
+      console.error("File processing error:", error);
+    }
+  };
 
   const filteredData = useMemo(() => {
-    let result = [...fileState.matchedData, ...fileState.unmatchedData];
-    
+    let data = [];
     switch (displayMode) {
       case 'MATCHED':
-        result = fileState.matchedData;
+        data = fileState.matchedData;
+        break;
+      case 'CLEANED':
+        data = isCleaningComplete ? cleanedData : [];
         break;
       case 'UNMATCHED':
-        result = fileState.unmatchedData;
+        data = fileState.unmatchedData;
         break;
+      default:
+        data = [
+          ...(isCleaningComplete ? cleanedData : fileState.matchedData),
+          ...fileState.unmatchedData
+        ];
     }
-
-    return result.filter(row => {
-      const matchesRSBSA = filters.rsbsaNo === '' || 
-        (row.RSBSA_NO && row.RSBSA_NO.toString().toLowerCase().includes(filters.rsbsaNo.toLowerCase())) ||
-        (row.originalData?.RSBSA_NO && row.originalData.RSBSA_NO.toString().toLowerCase().includes(filters.rsbsaNo.toLowerCase()));
-
-      const fullName = `${row.FIRSTNAME || row.originalData?.FIRSTNAME || ''} ${row.LASTNAME || row.originalData?.LASTNAME || ''}`.toLowerCase();
-      const matchesName = filters.name === '' || 
+  
+    // Apply filters
+    return data.filter(row => {
+      const rsbsaNo = row.RSBSA_NO || 
+                     row.originalData?.RSBSASYSTEMGENERATEDNUMBER || 
+                     row.matchDetails?.rsbsa_no;
+      
+      const matchesRSBSA = !filters.rsbsaNo || 
+        (rsbsaNo && rsbsaNo.toString().toLowerCase().includes(filters.rsbsaNo.toLowerCase()));
+  
+      const firstName = row.FIRSTNAME || 
+                       row.originalData?.FIRSTNAME || 
+                       row.matchDetails?.first_name;
+      const lastName = row.LASTNAME || 
+                      row.originalData?.LASTNAME || 
+                      row.matchDetails?.surname;
+      
+      const fullName = `${firstName || ''} ${lastName || ''}`.toLowerCase();
+      const matchesName = !filters.name || 
         fullName.includes(filters.name.toLowerCase());
-
+  
       return matchesRSBSA && matchesName;
     });
-  }, [
-    fileState.matchedData, 
-    fileState.unmatchedData, 
-    displayMode, 
-    filters
-  ]);
+  }, [displayMode, fileState.matchedData, fileState.unmatchedData, cleanedData, filters.rsbsaNo, filters.name]);
 
+  
   const currentPageData = filteredData.slice(
     page * rowsPerPage,
     page * rowsPerPage + rowsPerPage
@@ -177,117 +189,146 @@ const DataProcessingTool = () => {
     }
   };
 
-  const matchDataWithAPI = async (rows) => {
-    setMatching(true);
+  const handleCleanData = async () => {
+    if (!window.confirm('This will clean the matched data based on our records and export the results. Continue?')) return;
+  
+    if (fileState.matchedData.length === 0) {
+      Swal.fire("Info", "No matched records to clean", "info");
+      return;
+    }
+  
+    setCleaning(true);
     try {
-      const batchSize = 10;
-      let totalMatched = 0;
-      let totalUnmatched = 0;
-      let matchedResults = [];
-      let unmatchedResults = [];
+      const rsbsaNumbers = fileState.matchedData
+        .map(m => m.matchDetails?.rsbsa_no || m.originalData?.RSBSASYSTEMGENERATEDNUMBER)
+        .filter(Boolean);
   
-      for (let i = 0; i < rows.length; i += batchSize) {
-        const batch = rows.slice(i, i + batchSize);
-        
-        const results = await Promise.all(
-          batch.map(async (row) => {
-            try {
-              const headers = {
-                "RSBSASYSTEMGENERATEDNUMBER": row.RSBSA_NO || "",
-                "FIRSTNAME": row.FIRSTNAME || "",
-                "MIDDLENAME": row.MIDDLENAME || "",
-                "LASTNAME": row.LASTNAME || "",
-                "EXTENSIONNAME": row.EXTENSIONNAME || "",
-                "SEX": row.SEX || "",
-                "MOTHERMAIDENNAME": row.MOTHERMAIDENNAME || ""
-              };
-  
-              const response = await dataMatchingAPI.get("/api/match/rsbsa", {
-                headers: headers
-              });
-  
-              if (
-                response.data.success &&
-                response.data.data &&
-                Object.keys(response.data.data).length > 0 &&
-                Array.isArray(response.data.data[Object.keys(response.data.data)[0]]) &&
-                response.data.data[Object.keys(response.data.data)[0]].length > 0
-              ) {
-                const firstKey = Object.keys(response.data.data)[0];
-                const matchedData = response.data.data[firstKey][0];
-                const rsbsaNo = matchedData.rsbsa_no;
-              
-                totalMatched++;
-                return {
-                  ...row,
-                  matchStatus: "MATCHED",
-                  matchDetails: {       
-                    rsbsa_no: rsbsaNo
-                  },
-                  showDetails: false // Add this to control dropdown visibility
-                };
-              } else {
-                totalUnmatched++;
-                return {
-                  ...row,
-                  matchStatus: "UNMATCHED",
-                  remarks: response.data.message || "No matching record found",
-                  unmatchedRecords: response.data.unmatchedRecords || [], // Add unmatched fields from API
-                  showDetails: true // Show details by default for unmatched
-                };
-              }              
-            } catch (error) {
-              console.error("Error matching record:", error);
-              totalUnmatched++;
-              return {
-                ...row,
-                matchStatus: "ERROR",
-                remarks: error.response?.data?.message || 
-                         error.message || 
-                         "API request failed",
-                unmatchedRecords: error.response?.data?.unmatchedRecords || [],
-                showDetails: true // Show details for errors
-              };
-            }
-          })
-        );
-  
-        const matched = results.filter(r => r.matchStatus === "MATCHED");
-        const unmatched = results.filter(r => r.matchStatus !== "MATCHED");
-        
-        matchedResults = [...matchedResults, ...matched];
-        unmatchedResults = [...unmatchedResults, ...unmatched];
-        
-  
-        setMatchedData(matchedResults);
-        setUnmatchedData(unmatchedResults);
-  
-        await new Promise(resolve => setTimeout(resolve, 100));
+      if (rsbsaNumbers.length === 0) {
+        throw new Error("No valid RSBSA numbers found");
       }
   
-      Swal.fire({
-        title: 'Matching Complete',
-        html: `
-          <div>
-            <p>Matched records: ${totalMatched}</p>
-            <p>Unmatched records: ${totalUnmatched}</p>
-          </div>
-        `,
-        icon: 'success',
-        timer: 2000
+      const response = await dataMatchingAPI.post('/api/clean', {}, {
+        headers: {
+          'RSBSASYSTEMGENERATEDNUMBER': rsbsaNumbers.join(',')
+        }
       });
+  
+      const cleanedData = response.data.cleanedRecords;
+      setCleanedData(cleanedData);
+      setIsCleaningComplete(true);
+      Swal.fire("Success", `Cleaned ${cleanedData.length} records`, "success");
+  
+      // Trigger export immediately after successful cleaning
+      handleExport();
+  
     } catch (error) {
-      console.error("Batch matching error:", error);
-      Swal.fire("Error", "Failed to complete matching process", "error");
+      console.error("Cleaning error:", error);
+      Swal.fire("Error", `Failed to clean data: ${error.message}`, "error");
     } finally {
-      setMatching(false);
+      setCleaning(false);
     }
   };
 
   const validateDataRows = (rows) => {
     setIsValidating(true);
     try {
-      const { validRows, invalidRows } = validateData(rows);
+      const nameMap = new Map();
+      const systemNumberMap = new Map();
+      const validRows = [];
+      const invalidRows = [];
+  
+      // First pass to build maps
+      rows.forEach(row => {
+        const sysNum = row.RSBSASYSTEMGENERATEDNUMBER || 
+                      (row.originalData && row.originalData.RSBSASYSTEMGENERATEDNUMBER);
+        if (sysNum) {
+          if (!systemNumberMap.has(sysNum)) {
+            systemNumberMap.set(sysNum, []);
+          }
+          systemNumberMap.get(sysNum).push(row);
+        }
+  
+        const firstName = row.FIRSTNAME || 
+                        (row.originalData && row.originalData.FIRSTNAME);
+        const middleName = row.MIDDLENAME || 
+                         (row.originalData && row.originalData.MIDDLENAME);
+        const lastName = row.LASTNAME || 
+                       (row.originalData && row.originalData.LASTNAME);
+        const extName = row.EXTENSIONNAME || 
+                       (row.originalData && row.originalData.EXTENSIONNAME);
+  
+        const nameKey = `${firstName || ''}_${middleName || ''}_${lastName || ''}_${extName || ''}`.toLowerCase();
+        if (!nameMap.has(nameKey)) {
+          nameMap.set(nameKey, []);
+        }
+        nameMap.get(nameKey).push(row);
+      });
+
+      rows.forEach(row => {
+        const remarks = [];
+        let hasErrors = false;
+  
+        const rowData = {
+          ...(row.originalData || {}),
+          ...row
+        };
+  
+        // Apply validation rules
+        validationRules.forEach(rule => {
+          rule.fields.forEach(field => {
+            if (rule.validate(rowData, field)) {
+              remarks.push(rule.message(field));
+              hasErrors = true;
+            }
+          });
+        });
+  
+        // Check for duplicate system numbers
+        const sysNum = rowData.RSBSASYSTEMGENERATEDNUMBER;
+        if (sysNum && systemNumberMap.get(sysNum)?.length > 1) {
+          remarks.push('DUPLICATE SYSTEM NUMBER');
+          hasErrors = true;
+        }
+  
+        const firstName = rowData.FIRSTNAME;
+        const middleName = rowData.MIDDLENAME;
+        const lastName = rowData.LASTNAME;
+        const extName = rowData.EXTENSIONNAME;
+  
+        const nameKey = `${firstName || ''}_${middleName || ''}_${lastName || ''}_${extName || ''}`.toLowerCase();
+        const namesakes = nameMap.get(nameKey) || [];
+        
+        if (namesakes.length > 1) {
+          const isDuplicate = namesakes.some(other => {
+            const otherData = {
+              ...(other.originalData || {}),
+              ...other
+            };
+            return other !== row && 
+              (
+                (otherData.RSBSASYSTEMGENERATEDNUMBER && 
+                 otherData.RSBSASYSTEMGENERATEDNUMBER === sysNum) ||
+                (otherData.BIRTHDATE === rowData.BIRTHDATE && 
+                 otherData.MOTHERMAIDENNAME === rowData.MOTHERMAIDENNAME)
+              );
+          });
+          
+          if (isDuplicate) {
+            remarks.push('DUPLICATE NAME');
+            hasErrors = true;
+          }
+        }
+  
+        if (hasErrors) {
+          invalidRows.push({
+            ...row,
+            Remarks: remarks.join(' | ')
+          });
+        } else {
+          validRows.push(row);
+        }
+      });
+  
       setValidData(validRows);
       setInvalidData(invalidRows);
     } catch (error) {
@@ -316,14 +357,31 @@ const DataProcessingTool = () => {
     setActiveTab(newValue);
   };
 
-  const handleExport = (type) => {
-    exportValidatedData(
-      type === 'VALID' ? validData : invalidData,
-      type,
-      exportFileName
-    );
+  const handleExport = (exportType) => {
+    if (exportType === 'VALID') {
+      exportValidatedData(
+        validData,
+        'valid',
+        exportFileName,
+        cleanedData
+      );
+    } else if (exportType === 'INVALID') {
+      exportValidatedData(
+        invalidData,
+        'invalid',
+        exportFileName,
+        cleanedData,
+        invalidData
+      );
+    } else {
+      exportValidatedData(
+        fileState.matchedData,
+        'validated',
+        exportFileName,
+        cleanedData
+      );
+    }
   };
-
 
   const handleOpenEmailDialog = () => {
     setEmailDialogOpen(true);
@@ -351,18 +409,6 @@ const DataProcessingTool = () => {
     birthday: "BIRTHDATE"
   };  
 
-  const handleSendEmail = async () => {
-    const success = await sendValidationResults(
-      emailData,
-      validData,
-      invalidData,
-      exportFileName
-    );
-    if (success) {
-      handleCloseEmailDialog();
-      handleCloseValidationDialog();
-    }
-  };
 
   const handleClearData = () => {
     clearFileData();
@@ -372,8 +418,74 @@ const DataProcessingTool = () => {
     setValidData([]);
     setInvalidData([]);
     setExportFileName("");
+    setCleanedData([]);
+    setIsCleaningComplete(false);
     fileInputRef.current.value = "";
     setSaveDisabled(true);
+  };
+  
+  const renderActionButtons = () => (
+    <Box>
+      <Button
+        variant="contained"
+        color="primary"
+        startIcon={<DataArray />}
+        onClick={handleOpenValidationDialog}
+        disabled={
+          fileState.matchedData.length === 0 || 
+          cleaning || 
+          !isCleaningComplete
+        }
+        sx={{ 
+          ml: 1,
+          '&.Mui-disabled': {
+            backgroundColor: '#f5f5f5',
+            color: '#bdbdbd'
+          }
+        }}
+      >
+        {isCleaningComplete ? 'Validate Cleaned' : 'Validate Matches'}
+      </Button>
+    </Box>
+  );
+
+  const renderStatusChips = () => (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <Chip 
+      label={`Matched: ${fileState.matchedData.length}`} 
+      color="success" 
+      variant="outlined"
+      icon={<CheckCircle fontSize="small" />}
+    />
+    {isCleaningComplete && (
+      <Chip 
+        label={`Cleaned: ${cleanedData.length}`}
+        color="info"
+        variant="outlined"
+        icon={<CheckCircle fontSize="small" />}
+        sx={{ ml: 1 }}
+      />
+    )}
+    <Chip 
+      label={`Unmatched: ${fileState.unmatchedData.length}`} 
+      color="error" 
+      variant="outlined"
+      icon={<ErrorOutline fontSize="small" />}
+    />
+  </Box>
+  );
+
+  const handleSendEmail = async () => {
+    setEmailDialogOpen(false);
+    setValidationDialogOpen(false);
+    
+    const success = await sendValidationResults(
+      emailData,
+      validData,
+      invalidData,
+      exportFileName,
+      cleanedData
+    );
   };
 
   return (
@@ -441,52 +553,74 @@ const DataProcessingTool = () => {
         </CardContent>
       </Card>
 
+      {fileState.matchedData.length > 0 && !isCleaningComplete && (
+        <Box sx={{ 
+          backgroundColor: '#fff3e0',
+          p: 2,
+          borderRadius: 1,
+          mb: 2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <InfoIcon color="warning" />
+          <Typography variant="body2">
+            Data Cleaning is optional. If you want to see the invalid data after the matching process, you can skip the cleaning step to review unmatched or incorrectly formatted entries."
+          </Typography>
+        </Box>
+      )}
+
       {(fileState.matchedData.length > 0 || fileState.unmatchedData.length > 0) && (
         <>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 2 }}>
-            <Box>
-              <ToggleButtonGroup
-                value={displayMode}
-                exclusive
-                onChange={handleDisplayModeChange}
-                aria-label="display mode"
-                size="small"
-                sx={{ mr: 2 }}
-              >
-                <ToggleButton value="ALL" aria-label="show all">
-                  <Typography variant="caption">All</Typography>
-                </ToggleButton>
-                <ToggleButton value="MATCHED" aria-label="show matched">
-                  <CheckCircle fontSize="small" sx={{ mr: 0.5 }} />
-                  <Typography variant="caption">{fileState.matchedData.length}</Typography>
-                </ToggleButton>
-                <ToggleButton value="UNMATCHED" aria-label="show unmatched">
-                  <ErrorOutline fontSize="small" sx={{ mr: 0.5 }} />
-                  <Typography variant="caption">{fileState.unmatchedData.length}</Typography>
-                </ToggleButton>
-              </ToggleButtonGroup>
-              
-              <Chip 
-                label={`Total: ${filteredData.length}`} 
-                color="default" 
-                variant="outlined"
-                size="small"
-              />
-            </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3, mb: 2 }}>
+          <Box>
+          <ToggleButtonGroup
+            value={displayMode}
+            exclusive
+            onChange={handleDisplayModeChange}
+            aria-label="display mode"
+            size="small"
+            sx={{ mr: 2 }}
+          >
+            <ToggleButton value="ALL" aria-label="show all">
+              <Typography variant="caption">All</Typography>
+            </ToggleButton>
+            <ToggleButton value="MATCHED" aria-label="show matched">
+              <CheckCircle fontSize="small" sx={{ mr: 0.5 }} />
+              <Typography variant="caption">{fileState.matchedData.length}</Typography>
+            </ToggleButton>
+            <ToggleButton value="UNMATCHED" aria-label="show unmatched">
+              <ErrorOutline fontSize="small" sx={{ mr: 0.5 }} />
+              <Typography variant="caption">{fileState.unmatchedData.length}</Typography>
+            </ToggleButton>
+          </ToggleButtonGroup>
             
-            <Box>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<DataArray />}
-                onClick={handleOpenValidationDialog}
-                disabled={fileState.matchedData.length === 0}
-                sx={{ mr: 1 }}
-              >
-                Validate Matches
-              </Button>
-            </Box>
+            {renderStatusChips()}
           </Box>
+          
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={cleaning ? <CircularProgress size={20} /> : <CleaningServices />}
+              onClick={handleCleanData}
+              disabled={fileState.matchedData.length === 0 || cleaning}
+            >
+              {cleaning ? 'Cleaning...' : 'Clean Matches'}
+            </Button>
+            
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<DataArray />}
+              onClick={handleOpenValidationDialog}
+              disabled={fileState.matchedData.length === 0 || (cleanedData.length > 0 && cleaning)}
+              sx={{ ml: 1 }}
+            >
+              Validate {cleanedData.length > 0 ? 'Cleaned' : 'Matches'}
+            </Button>
+          </Box>
+        </Box>
           <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
             <TextField
               label="Search RSBSA No"
@@ -864,22 +998,33 @@ const DataProcessingTool = () => {
                 </TableContainer>
               )}
 
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                mt: 2, 
+                gap: 1,
+                flexWrap: 'wrap' 
+              }}>
+                {/* Email Button - Added here */}
                 <Button
                   variant="contained"
                   color="primary"
                   startIcon={<Email />}
                   onClick={handleOpenEmailDialog}
                   disabled={validData.length === 0 && invalidData.length === 0}
+                  sx={{ mr: 1 }}
                 >
                   Email Results
                 </Button>
+                
+                {/* Export Buttons */}
                 <Button
                   variant="contained"
                   color="success"
                   startIcon={<SaveAlt />}
-                  onClick={() => exportValidatedData('VALID')}
+                  onClick={() => handleExport('VALID')}
                   disabled={validData.length === 0}
+                  sx={{ mr: 1 }}
                 >
                   Export Valid
                 </Button>
@@ -887,7 +1032,7 @@ const DataProcessingTool = () => {
                   variant="contained"
                   color="error"
                   startIcon={<SaveAlt />}
-                  onClick={() => exportValidatedData('INVALID')}
+                  onClick={() => handleExport('INVALID')}
                   disabled={invalidData.length === 0}
                 >
                   Export Invalid
@@ -958,7 +1103,7 @@ const DataProcessingTool = () => {
         <DialogActions>
           <Button onClick={handleCloseEmailDialog}>Cancel</Button>
           <Button 
-            onClick={sendValidationResults} 
+            onClick={handleSendEmail} 
             variant="contained" 
             color="primary"
             startIcon={<Send />}

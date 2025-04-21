@@ -11,6 +11,7 @@ import DuplicateValidator from "./components/DuplicateValidator";
 import { DataProvider } from "./contexts/DataContext";
 import Users from "./components/Users";
 import ForgotPassword from "./components/ForgotPassword";
+import { FileProvider } from './context/FileContext';
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -30,33 +31,35 @@ const App = () => {
 
   return (
     <DataProvider>
-      <Router>
-        <Routes>
-          {isAuthenticated ? (
-            <>
-              <Route path="/" element={<Layout onSignOut={handleSignOut} />}>
-                <Route index element={<Dashboard />} />
-                <Route path="import" element={<Import />} />
-                <Route path="duplicate" element={<DuplicateValidator />} />
-                <Route path="users" element={<Users />} />
-              </Route>
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </>
-          ) : (
-            <>
-              <Route path="/login" element={<Login onLogin={handleLogin} />} />
-              <Route 
-                path="/verify-otp" 
-                element={<OTPVerification onVerify={handleLogin} />} 
-              />
-              <Route path="/signup" element={<SignUp />} />
-              <Route path="/verify-signup-otp" element={<VerifySignupOtp />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </>
-          )}
-        </Routes>
-      </Router>
+      <FileProvider>
+        <Router>
+          <Routes>
+            {isAuthenticated ? (
+                <>
+                  <Route path="/" element={<Layout onSignOut={handleSignOut} />}>
+                    <Route index element={<Dashboard />} />
+                    <Route path="import" element={<Import />} />
+                    <Route path="duplicate" element={<DuplicateValidator />} />
+                    <Route path="users" element={<Users />} />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </>
+              ) : (
+                <>
+                  <Route path="/login" element={<Login onLogin={handleLogin} />} />
+                  <Route 
+                    path="/verify-otp" 
+                    element={<OTPVerification onVerify={handleLogin} />} 
+                  />
+                  <Route path="/signup" element={<SignUp />} />
+                  <Route path="/verify-signup-otp" element={<VerifySignupOtp />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="*" element={<Navigate to="/login" replace />} />
+                </>
+              )}
+          </Routes>
+        </Router>
+      </FileProvider>
     </DataProvider>
   );
 };
