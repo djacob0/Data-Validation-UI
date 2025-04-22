@@ -10,6 +10,7 @@ import Swal from "sweetalert2";
 import api from "../connection/api";
 import { standardizeHeader, validateData, applyAutoFix, applyAllFixes
 } from '../utils/AutoFixValidations';
+import { useFileContext } from '../context/FileContext';
 
 const ValidationProgressBar = ({ progress, isValidating }) => (
   <Slide direction="down" in={isValidating} mountOnEnter unmountOnExit>
@@ -477,7 +478,7 @@ const Import = () => {
           ) : (
             <div className="space-y-4">
               <CloudUpload style={{ fontSize: "4rem", color: "#1976d2" }} />
-              <Typography variant="h6">Drag & drop files here</Typography>
+              <Typography variant="h6">Smart Cleaner</Typography>
               <Typography variant="body2" color="textSecondary">
                 Supported formats: .xlsx, .csv (Max 10MB)
               </Typography>
@@ -718,7 +719,7 @@ const Import = () => {
                 {validation.errors.length > 0 && (
                   <div className="mb-4">
                     <Typography variant="subtitle1" gutterBottom>
-                      Validation Errors ({validation.errors.length} total)
+                      Validation Remarks({validation.errors.length} total)
                     </Typography>
                     
                     <TablePagination
