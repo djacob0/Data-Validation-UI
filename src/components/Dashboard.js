@@ -1,28 +1,8 @@
 import React, { useEffect, useState } from "react";
 import api from "../connection/api";
-import { 
-  Typography, 
-  Avatar, 
-  Chip, 
-  Divider,
-  Tooltip,
-  IconButton,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  Badge
+import { Typography, Avatar, Chip, Divider, Tooltip, IconButton, Button, Dialog, DialogActions, DialogContent, DialogTitle, Badge
 } from "@mui/material";
-import { 
-  PersonOutline, 
-  EmailOutlined, 
-  PhoneOutlined, 
-  CalendarTodayOutlined,
-  StarBorderOutlined,
-  EditOutlined,
-  RefreshOutlined,
-  Notifications
+import { PersonOutline, EmailOutlined, PhoneOutlined, CalendarTodayOutlined, StarBorderOutlined, EditOutlined, RefreshOutlined, Notifications
 } from '@mui/icons-material';
 import { motion } from "framer-motion";
 
@@ -116,6 +96,19 @@ const Dashboard = ({ isCollapsed = false }) => {
     }
   };
 
+  const getAccountLevelLabel = (level) => {
+    switch (level) {
+      case 1:
+        return "Developer";
+      case 2:
+        return "Admin";
+      case 3:
+        return "User";
+      default:
+        return "Unknown";
+    }
+  };
+  
   const renderStatCard = (label, value, icon, color) => (
     <div className="flex items-center gap-3 border border-gray-200 rounded-lg p-4 shadow-sm">
       <div className={`text-${color}-500`}>
@@ -314,7 +307,6 @@ const Dashboard = ({ isCollapsed = false }) => {
         </div>
       </div>
 
-      {/* Pending Users Modal */}
       <Dialog 
         open={openModal} 
         onClose={() => setOpenModal(false)} 
@@ -322,7 +314,7 @@ const Dashboard = ({ isCollapsed = false }) => {
         fullWidth
       >
         <DialogTitle className="flex items-center">
-          Pending User Approvals
+          Pending User Access Approvals
           {pendingUsers.length > 0 && (
             <Chip 
               label={`${pendingUsers.length} pending`} 
@@ -338,28 +330,28 @@ const Dashboard = ({ isCollapsed = false }) => {
               {pendingUsers.map((pendingUser) => (
                 <div 
                   key={pendingUser.id} 
-                  className="flex justify-between items-center p-3 border-b border-gray-100 last:border-0"
+                  className="flex justify-between items-center p-3 border-b border-gray-100"
                 >
                   <div>
-                    <Typography variant="subtitle1" className="font-medium">
-                      {pendingUser.username}
-                    </Typography>
-                    <Typography variant="body2" className="text-gray-600">
-                      {pendingUser.email}
-                    </Typography>
+                  <Typography variant="body2" className="text-gray-500">
+                  @{pendingUser.username} • {pendingUser.email}
+                  </Typography>
+                  <Typography variant="body2" className="text-gray-500">
+                    Role: {getAccountLevelLabel(pendingUser.accountLevel)}
+                  </Typography>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="contained"
-                      color="success"
+                    <Button 
+                      variant="contained" 
+                      color="success" 
                       size="small"
                       onClick={() => handleApprove(pendingUser.id)}
                     >
                       Approve
                     </Button>
-                    <Button
-                      variant="outlined"
-                      color="error"
+                    <Button 
+                      variant="outlined" 
+                      color="error" 
                       size="small"
                       onClick={() => handleReject(pendingUser.id)}
                     >
@@ -368,25 +360,21 @@ const Dashboard = ({ isCollapsed = false }) => {
                   </div>
                 </div>
               ))}
-            </div>
-          ) : (
-            <Typography variant="body2" className="text-gray-500 text-center py-4">
-              No pending users for approval.
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button 
-            onClick={() => setOpenModal(false)} 
-            color="primary"
-            variant="contained"
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </div>
-  );
+          </div>
+        ) : (
+          <Typography variant="body2" className="text-gray-500">
+            There are no users awaiting approval.
+          </Typography>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setOpenModal(false)} color="primary">
+          Close
+        </Button>
+      </DialogActions>
+    </Dialog>
+  </div>
+);
 };
 
 export default Dashboard;

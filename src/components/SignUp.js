@@ -114,11 +114,20 @@ const SignUp = () => {
               <Grid item xs={12} sm={6}><TextField fullWidth size="small" type="password" label="Password" name="password" value={formData.password} onChange={handleChange} required /></Grid>
               <Grid item xs={12} sm={6}><TextField fullWidth size="small" type="password" label="Re-enter Password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required /></Grid>
               <Grid item xs={12} sm={6}>
-                <TextField fullWidth size="small" select label="Account Level" name="accountLevel" value={formData.accountLevel} onChange={handleChange} required>
-                  <MenuItem value="Admin">Developer</MenuItem>
-                  <MenuItem value="User">Admin</MenuItem>
-                  <MenuItem value="Manager">User</MenuItem>
-                </TextField>
+              <TextField
+                fullWidth
+                size="small"
+                select
+                label="Account Level"
+                name="accountLevel"
+                value={formData.accountLevel}
+                onChange={handleChange}
+                required
+              >
+                <MenuItem value="1">Developer</MenuItem>
+                <MenuItem value="2">Admin</MenuItem>
+                <MenuItem value="3">User</MenuItem>
+              </TextField>
               </Grid>
             </Grid>
 
