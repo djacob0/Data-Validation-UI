@@ -52,15 +52,8 @@ const Layout = () => {
 
   const NavItems = [
     { name: "Dashboard", icon: <Home size={20} />, path: "/dashboard" },
-    { name: "SmartCleaner", icon: <Import size={20} />, path: "/import" }, 
-    { 
-      name: "Match & Dedup", 
-      icon: <BarChart2 size={20} />, 
-      path: null,
-      subItems: [
-        { name: "ProcessTool", path: "/duplicate" }
-      ]
-    },
+    // { name: "SmartCleaner", icon: <Import size={20} />, path: "/import" }, 
+    { name: "Match & Validate", icon: <BarChart2 size={20} />, path: "/duplicate" },
     { name: "Users", icon: <UsersIcon size={20} />, path: "/users" },
   ];
 

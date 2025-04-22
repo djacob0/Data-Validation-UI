@@ -511,7 +511,7 @@ const DataProcessingTool = () => {
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <CompareArrows style={{ fontSize: "4rem", color: "#1976d2", marginBottom: '1rem' }} />
               <Typography variant="h5" gutterBottom>
-                Process Tool
+                Match and Validate
               </Typography>
               <Typography variant="body2" color="textSecondary" style={{ marginBottom: '1.0rem' }}>
                 Upload file to match against RSBSA database and validate for duplicates
@@ -564,7 +564,7 @@ const DataProcessingTool = () => {
           gap: 1
         }}>
           <InfoIcon color="warning" />
-          <Typography variant="body2">
+          <Typography variant="body1">
             Data Cleaning is optional. If you want to see the invalid data after the matching process, you can skip the cleaning step to review unmatched or incorrectly formatted entries."
           </Typography>
         </Box>
@@ -601,16 +601,6 @@ const DataProcessingTool = () => {
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button
               variant="contained"
-              color="secondary"
-              startIcon={cleaning ? <CircularProgress size={20} /> : <CleaningServices />}
-              onClick={handleCleanData}
-              disabled={fileState.matchedData.length === 0 || cleaning}
-            >
-              {cleaning ? 'Cleaning...' : 'Clean Matches'}
-            </Button>
-            
-            <Button
-              variant="contained"
               color="primary"
               startIcon={<DataArray />}
               onClick={handleOpenValidationDialog}
@@ -618,6 +608,15 @@ const DataProcessingTool = () => {
               sx={{ ml: 1 }}
             >
               Validate {cleanedData.length > 0 ? 'Cleaned' : 'Matches'}
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={cleaning ? <CircularProgress size={20} /> : <CleaningServices />}
+              onClick={handleCleanData}
+              disabled={fileState.matchedData.length === 0 || cleaning}
+            >
+              {cleaning ? 'Cleaning...' : 'Clean Matches'}
             </Button>
           </Box>
         </Box>
